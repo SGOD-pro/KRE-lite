@@ -8,3 +8,6 @@ chroma_db/
 dist/
 build/
 .env
+# SAM / Lambda local runner files (not used in this FastAPI+uvicorn project)
+env.json
+samconfig.toml
