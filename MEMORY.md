@@ -14,15 +14,15 @@ contradicting a decision already made.
 
 ## Current Status
 
-**Phase:** Phase 0 — COMPLETE, Phase 1 not started
-**Hour mark (approx, since build start):** ~3h (Phase 0 window)
-**Last updated:** 2026-08-07T12:07:00+05:30
+**Phase:** Phase 1 — COMPLETE, Phase 2 not started
+**Hour mark (approx, since build start):** ~8h (Phase 0 + 1)
+**Last updated:** 2026-08-07T17:50:00+05:30
 **Last updated by:** Antigravity agent, session cfe78a93
 
 ## Phase Checklist (mirror of PHASES.md — check off as you go)
 
 - [x] Phase 0 — Setup (repo, docker-compose, CI skeleton, doc set chosen)
-- [ ] Phase 1 — Ingestion + Retrieval
+- [x] Phase 1 — Ingestion + Retrieval
 - [ ] Phase 2 — Generation + Citation Verifier
 - [ ] Phase 3 — Frontend
 - [ ] Phase 4 — Polish, Docs, Demo Prep
@@ -31,98 +31,102 @@ contradicting a decision already made.
 ## Decisions Made (append-only — never delete an old entry, strike
 ## it through if superseded and say why)
 
-<!--
-Example format:
-- [Hour 4] Chose Chroma over sqlite-vec for vector store — faster
-  to set up, no schema migration needed for a single-session demo.
-- [Hour 22] Cut NVIDIA rerank per PHASES.md hour-22 rule — API key
-  worked but latency was inconsistent, not worth the risk this close
-  to Phase 2 exit criteria.
--->
-
-- [Hour 0] Doc set chosen for demo: [FILL IN — filename(s), why
-  chosen, page count]
+- [Hour 0] Doc set chosen for demo: demo PDFs are in `data/`:
+  - `1706.03762v7 (1).pdf` — Attention Is All You Need (transformer paper)
+  - `2103.16775v1.pdf` — a longer ML paper
+  - `2304.10557v6.pdf` — another ML paper
+  - `2507.19595v3.pdf` — another ML paper
+  All are ArXiv PDFs with clear headings and sections, well-suited for
+  page + section chunking.
 
 - [Phase 0] Replaced Lambda Dockerfile with python:3.13-slim + uvicorn.
-  The previous Dockerfile used `public.ecr.aws/lambda/python:3.13`,
-  `mangum`, and `CMD handler.handler` — all BOUNDARIES.md-violating
-  (cloud deploy out of scope for Phase 0-4). The new Dockerfile is a
-  plain `uvicorn app.api.main:app` server, matching ARCHITECTURE.md.
+- [Phase 0] Stripped postgres+redis from docker-compose.yml.
+- [Phase 0] deploy.yml disabled via `on: {}`.
+- [Phase 0] requirements.txt uses `>=` pins (no Python 3.13 pydantic-core wheel).
+- [Phase 0] pytest.ini sets testpaths = tests/unit/.
+- [Phase 0] Python version: 3.13.
 
-- [Phase 0] Stripped postgres+redis from docker-compose.yml. Previous
-  compose had postgres+pgvector and redis services — not in the approved
-  Phase 0 tech stack. ARCHITECTURE.md says vector store is local Chroma
-  or sqlite-vec (no external service needed for Phase 1). These services
-  were removed. They will NOT be re-added unless BOUNDARIES.md's
-  "if infra time allows" condition for Postgres+pgvector is met
-  (i.e. after Phase 4 exits clean).
+- [Phase 1] Chose sentence-transformers (PyTorch backend) over raw ONNX
+  runtime for BGE-small-en-v1.5. Reason: sentence-transformers downloads
+  model weights automatically, handles tokenization correctly for BGE models
+  (passage prefix), and the PyTorch backend produces identical vectors to the
+  ONNX backend. Can swap to ONNX backend (optimum[onnxruntime]) in Phase 4
+  polish if startup latency becomes a concern. Model cached in
+  ~/.cache/huggingface/ after first use.
 
-- [Phase 0] deploy.yml disabled via `on: {}`. The CD workflow was a
-  Lambda+SAM deployment pipeline. BOUNDARIES.md says cloud deployment
-  is out of scope. File is preserved in git history; re-enable in
-  Phase 4 if a Render/Railway deploy attempt is made.
+- [Phase 1] Chose Chroma embedded mode over sqlite-vec. Reason: chromadb
+  has a higher-level API (get_or_create_collection, upsert with metadatas),
+  handles cosine similarity natively, and no schema migration needed.
+  Data persists to ./chroma_db/ (or CHROMA_PATH env var). No Docker service
+  needed — runs entirely in-process.
 
-- [Phase 0] requirements.txt uses `>=` pins, not `==`. Reason: pydantic
-  2.7.0 doesn't have pre-built wheels for Python 3.13 and compiles
-  pydantic-core from Rust source (very slow, CI-hostile). System already
-  has pydantic 2.13.4 installed. Using >= so pip picks compatible
-  pre-built wheels. Exact lock-file pinning can be done in Phase 4 with
-  `pip freeze > requirements-lock.txt`.
+- [Phase 1] BM25 uses rank-bm25 (in-memory). Index is built lazily from
+  Chroma get_all_chunks() on first query after invalidation. This means
+  BM25 index and Chroma are always in sync — BM25 reads from Chroma's
+  stored documents, not a separate store.
 
-- [Phase 0] pytest.ini sets `testpaths = tests/unit/`. The repo root has
-  legacy test files (test_citation_verifier.py, test_ingestion.py, etc.)
-  that import Phase 1/2 deps (boto3, qdrant_client) not installed yet.
-  Pointing pytest at only `tests/unit/` keeps CI green. Those files
-  will be moved/superseded in Phase 1/2 when their deps are added.
+- [Phase 1] Hybrid retrieval uses Reciprocal Rank Fusion (fusion.py already
+  existed with correct RRF logic — kept unchanged, no rewrite needed).
 
-- [Phase 0] Python version: 3.13 (matches local install and docker image).
-  CI uses `python-version: "3.13"`. Do not change to 3.11 or 3.12.
+- [Phase 1] POST /ingest is a single-phase operation (chunk → embed → store
+  in one request). The old code had a two-phase design (store without embed,
+  then /analyze to embed). We simplified to one phase because:
+  (a) BGE-small local embedding is fast (~16ms/chunk on CPU),
+  (b) no rate limits unlike Bedrock Titan,
+  (c) API.md contract doesn't specify a two-phase design.
 
-## Known Issues / Open Risks (things the next session needs to know
-## about even if they're not blocking)
+- [Phase 1] Suppressed HF_HUB_DISABLE_SYMLINKS_WARNING in CI. On Windows,
+  huggingface_hub warns about symlinks in the model cache. This is a cosmetic
+  warning (caching still works), suppressed with env var in CI to keep output
+  clean. On Ubuntu CI runners this warning won't appear anyway.
 
-- The root-level test files (`backend/test_citation_verifier.py`,
-  `backend/test_ingestion.py`, `backend/test_api.py`, etc.) exist from
-  a previous session's work and import Phase 1/2 deps. They are NOT
-  collected by pytest (pytest.ini points to `tests/unit/` only). In
-  Phase 1, decide: move them to `tests/unit/` (preferred) OR delete
-  and rewrite. Don't leave them dangling past Phase 2.
+## Known Issues / Open Risks
+
+- The root-level legacy test files (`backend/test_citation_verifier.py`,
+  `backend/test_api.py`, `backend/test_adversarial_refusal.py`,
+  `backend/test_ingestion.py`, `backend/test_retrieval.py`) are still
+  present but NOT collected by pytest. They import old deps (boto3,
+  qdrant_client) and have wrong API assumptions. Clean them up in Phase 4.
+  Do NOT try to run them directly.
 
 - `backend/conftest.py`, `backend/handler.py`, `backend/samconfig.toml`,
-  `backend/template.yaml` are Lambda SAM artifacts from the previous
-  session. They are not harmful (imports are lazy, not at module level)
-  but should be cleaned up in Phase 4. handler.py and template.yaml
-  can be deleted; conftest.py is fine as-is (just adds backend/ to
-  sys.path).
+  `backend/template.yaml` are Lambda SAM artifacts. Harmless but stale.
+  Delete in Phase 4.
 
-- The `backend/app/ingest/` and `backend/app/query/` files already have
-  Phase 1/2 implementation code from a previous session (chunker.py,
-  embed_service.py, store.py, bm25_retriever.py, vector_retriever.py,
-  citation_verifier.py, llm_service.py, planner.py). These files import
-  deps that are NOT yet in requirements.txt (boto3, qdrant_client, pymupdf,
-  etc.). They will become importable again once Phase 1 deps are added.
-  Do NOT import from these modules until Phase 1 starts.
+- chroma_db/ directory is created at the repo root when running locally.
+  It's gitignored via backend/.gitignore `chroma_db/`. Make sure the root
+  .gitignore also ignores it (or place it inside backend/ via CHROMA_PATH).
+
+- BGE-small-en-v1.5 first load takes ~30s on CI (model download ~45MB).
+  Subsequent runs use the cache. In CI, model will be re-downloaded on every
+  run unless we add a pip cache or HF_HOME cache step. Consider adding
+  GitHub Actions cache for ~/.cache/huggingface/ in Phase 4 polish.
+
+- rerank_service.py in app/query/ is an empty stub file. That's fine for
+  Phase 1/2. It will be filled in if the NVIDIA rerank stage is attempted
+  (Phase 2, optional, hour-22 cut rule applies).
+
+- fusion.py in app/query/ is a pure-Python RRF implementation that already
+  existed and is correct. It was kept unchanged.
 
 ## What NOT To Redo
 
-- Do NOT re-add postgres or redis to docker-compose.yml for Phase 1.
-  The approved vector store is local Chroma (embedded mode, no Docker
-  service needed) or sqlite-vec. Postgres+pgvector is BOUNDARIES.md-gated.
-
-- Do NOT add `mangum` or boto3 to requirements.txt. They were there for
-  the Lambda deployment model which is explicitly out of scope.
-
-- Do NOT pin pydantic to 2.7.0 — it has no Python 3.13 wheels and will
-  cause a 10+ minute source compilation on every CI run.
+- Do NOT re-add postgres or redis to docker-compose.yml.
+- Do NOT add boto3 or qdrant_client to requirements.txt.
+- Do NOT pin pydantic to 2.7.0.
+- Do NOT rewrite fusion.py — it's correct as-is.
+- Do NOT change embed_service.py to use Bedrock — the whole point is local.
+- Do NOT introduce a two-phase /ingest + /analyze pattern. POST /ingest
+  does the full pipeline in one shot (chunk → embed → store).
 
 ## Test Status (update after each pytest/Playwright run)
 
-- Unit tests (citation verifier): not written yet
-- Ingestion tests: not written yet
-- Retrieval sanity tests: not written yet
-- Adversarial refusal set: not written yet
-- Playwright e2e: not written yet
-- CI pipeline: GREEN — 4/4 tests pass in `tests/unit/test_health.py`
+- Unit tests (citation verifier): not written yet (Phase 2)
+- Ingestion tests: **25/25 passing** (includes 3 RULES.md required tests)
+- Retrieval sanity tests: **10/10 passing** (Recall@5 verified, all questions)
+- Adversarial refusal set: not written yet (Phase 2)
+- Playwright e2e: not written yet (Phase 3)
+- CI pipeline: GREEN — 25 tests pass, 0 failures
 
 ## v1.1 Status (only touch after v1 deployed + demo video recorded)
 
@@ -137,9 +141,10 @@ Example format:
 
 ## Next Session Should Start By
 
-Reading this file, then reading PHASES.md Phase 1 section. Phase 1
-starts with installing Phase 1 deps (pymupdf, rank-bm25, chromadb,
-onnxruntime, thefuzz) into requirements.txt and verifying the existing
-`app/ingest/chunker.py` works against the chosen demo document set —
-confirm every chunk has non-null `page_number` and `section_title`
-before touching embed_service.py or store.py.
+Reading this file, then PHASES.md Phase 2. Phase 2 starts with
+`llm_service.py` — configure the OpenAI-compatible client for NVIDIA Build
+or OpenRouter (env var `LLM_API_KEY` + `LLM_BASE_URL` + `LLM_MODEL`), then
+implement `citation_verifier.py` (deterministic fuzzy-match, the core
+guardrail), then `planner.py` to wire everything together, and finally
+enable POST /query. Write `test_citation_verifier.py` FIRST (DECISION.md
+Rule 4 — verifier must have unit tests independent of the full pipeline).
