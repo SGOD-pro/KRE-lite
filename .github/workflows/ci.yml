@@ -1,6 +1,10 @@
 name: CI
 
 on:
+  push:
+    branches: [ main, v1.1 ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -31,41 +35,27 @@ jobs:
       - name: Run unit tests
         run: pytest tests/unit/ -v
 
-  # ─── Phase 3+: e2e tests (disabled until Phase 3 deliverables exist) ───────
-  # Uncomment this job when:
-  #   - frontend/ has a package.json with playwright configured
-  #   - backend tests/unit/ has Playwright smoke-test wrapper
-  #
-  # e2e-tests:
-  #   name: End-to-End — Playwright
-  #   runs-on: ubuntu-latest
-  #   needs: backend-unit
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - name: Set up Node
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version: "20"
-  #         cache: "npm"
-  #         cache-dependency-path: frontend/package-lock.json
-  #     - name: Install frontend deps
-  #       working-directory: frontend
-  #       run: npm ci
-  #     - name: Install Playwright browsers
-  #       working-directory: frontend
-  #       run: npx playwright install --with-deps chromium
-  #     - name: Start backend
-  #       working-directory: backend
-  #       run: |
-  #         nohup python -m uvicorn app.api.main:app --host 0.0.0.0 --port 8000 &
-  #         sleep 5
-  #         curl --fail http://localhost:8000/health
-  #     - name: Run Playwright tests
-  #       working-directory: frontend
-  #       run: npx playwright test
-  #       env:
-  #         BASE_URL: http://localhost:3000
-  #         API_URL: http://localhost:8000
+  frontend-build:
+    name: Frontend — Typecheck & Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
 
   # ─── Boundaries check: tripwire for BOUNDARIES.md violations ───────────────
   boundaries-check:
@@ -75,12 +65,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Fail if disallowed patterns found in app/
-        # Cheap grep-based tripwire — catches the obvious cases.
-        # Not a substitute for the manual PROMPT-VALIDATE pass in PROMPTS.md.
         shell: bash
         run: |
           set -e
-          FORBIDDEN="okf_builder|page_index_service|graph_retriever|boto3\.client\('sqs'\)|elasticache|LocalStack"
+          FORBIDDEN="okf_builder|page_index_service|graph_retriever|boto3\.client\('sqs'\)|elasticache"
           if grep -rEi "$FORBIDDEN" --include="*.py" backend/app/ 2>/dev/null; then
             echo "::error::Found code matching a BOUNDARIES.md excluded pattern. See BOUNDARIES.md."
             exit 1

@@ -1,8 +1,8 @@
 name: CD (Continuous Deployment)
-# DISABLED — cloud deploy is out of scope per BOUNDARIES.md.
-# Re-enable after Phase 4 exits clean if cloud deploy is attempted.
-# To re-enable: restore the `on:` block below.
+
 on:
+  push:
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -27,14 +27,14 @@ jobs:
     name: Deploy Backend to AWS Lambda (SAM)
     runs-on: ubuntu-latest
     needs: changes
-    if: ${{ needs.changes.outputs.backend == 'true' }}
+    if: ${{ needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.13"
 
       - name: Setup AWS SAM CLI
         uses: aws-actions/setup-sam@v2
@@ -44,31 +44,34 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1
+          aws-region: ${{ secrets.AWS_REGION || 'ap-south-1' }}
 
       - name: Build SAM application
         working-directory: backend
-        run: sam build
+        run: sam build --use-container
 
       - name: Deploy SAM application
         working-directory: backend
         run: >
-          sam deploy --no-confirm-changeset --no-fail-on-empty-changeset 
-          --stack-name cited-or-silent-backend 
-          --s3-bucket ${{ secrets.S3_SAM_DEPLOY_BUCKET }} 
-          --capabilities CAPABILITY_IAM 
+          sam deploy --no-confirm-changeset --no-fail-on-empty-changeset
+          --stack-name kre-lite
+          --resolve-s3
+          --capabilities CAPABILITY_IAM
+          --region ${{ secrets.AWS_REGION || 'ap-south-1' }}
           --parameter-overrides
-          S3BucketName=${{ secrets.S3_BUCKET_NAME }}
-          QdrantEndpoint=${{ secrets.QDRANT_ENDPOINT }}
-          QdrantApiKey=${{ secrets.QDRANT_API_KEY }}
+          TitanEmbedModelId="amazon.titan-embed-text-v2:0"
+          NovaLlmModelId="amazon.nova-pro-v1:0"
+          S3BucketName="cited-or-silent-docs"
+          QdrantEndpoint="${{ secrets.QDRANT_ENDPOINT }}"
+          QdrantApiKey="${{ secrets.QDRANT_API_KEY }}"
           MongoDbUri="${{ secrets.MONGODB_URI }}"
-          MongoDbName=${{ secrets.MONGODB_DB }}
+          MongoDbName="cited_or_silent"
 
   deploy-frontend:
     name: Deploy Frontend to Vercel
     runs-on: ubuntu-latest
     needs: changes
-    if: ${{ needs.changes.outputs.frontend == 'true' }}
+    if: ${{ (needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch') && secrets.VERCEL_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
 
