@@ -14,9 +14,9 @@ contradicting a decision already made.
 
 ## Current Status
 
-**Phase:** Phase 3 — COMPLETE (Frontend + E2E Playwright Suite + System Benchmark)
-**Hour mark (approx, since build start):** ~16h (Phase 0 + 1 + 2 + 3)
-**Last updated:** 2026-08-07T19:45:00+05:30
+**Phase:** Phase 4 — COMPLETE (Docs, Docker Orchestration, GitHub Actions CI/CD Secrets, Demo Prep)
+**Hour mark (approx, since build start):** ~18h (Phase 0 + 1 + 2 + 3 + 4)
+**Last updated:** 2026-08-07T20:30:00+05:30
 **Last updated by:** Antigravity agent, session cfe78a93
 
 ## Phase Checklist (mirror of PHASES.md — check off as you go)
@@ -25,7 +25,7 @@ contradicting a decision already made.
 - [x] Phase 1 — Ingestion + Retrieval (Bedrock Titan + Qdrant + MongoDB Atlas)
 - [x] Phase 2 — Generation + Citation Verifier (Bedrock Nova Pro + Deterministic Fuzzy Verifier + Refusal Guardrails)
 - [x] Phase 3 — Frontend (Two-Pane UI + Source Viewer + Playwright E2E 8/8 Green + Benchmark Scorecard 100%)
-- [ ] Phase 4 — Polish, Docs, Demo Prep
+- [x] Phase 4 — Polish, Docs, Demo Prep (Docker Verified, README, AGENTS_AND_SKILLS.md, CD Secrets Documented)
 - [ ] Buffer hours used for: nothing yet
 
 ## Decisions Made (append-only — never delete an old entry, strike
