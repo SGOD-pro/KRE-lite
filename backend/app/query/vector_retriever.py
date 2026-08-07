@@ -1,17 +1,20 @@
 """
-vector_retriever.py — semantic search via Chroma (embedded mode).
+vector_retriever.py — Semantic search via Qdrant and AWS Bedrock Titan Embeddings.
 
-ARCHITECTURE.md retrieval flow:
-  BM25 top-k candidates -> BGE-small embed -> vector similarity re-rank
-  -> [optional] NVIDIA Build rerank -> LLM -> citation_verifier
-
-This module handles the vector similarity step against the Chroma
-collection created by store.py. It runs entirely in-process — no
-external service call.
+Flow:
+1. Query string -> AWS Bedrock Titan embedding (1024-dim).
+2. Qdrant vector similarity search against document_chunks collection.
+3. Attaches vector_score and returns ranked chunks.
 """
 from __future__ import annotations
 
 from typing import Any, List
+
+from qdrant_client.http.models import FieldCondition, Filter, MatchValue
+
+from app.ingest.embed_service import embed_query
+from app.ingest.store import COLLECTION_NAME, _init_qdrant_collection, get_chunks_by_ids
+from app.shared.config import get_qdrant_client
 
 
 def vector_search(
@@ -20,56 +23,69 @@ def vector_search(
     session_id: str | None = None,
 ) -> List[dict[str, Any]]:
     """
-    Search for the top_k most semantically similar chunks to `query`.
-
-    Returns a list of chunk dicts annotated with `vector_score`
-    (cosine similarity, 0-1, higher is better).
-
-    Args:
-        query: the user's question
-        top_k: max results to return
-        session_id: if provided, filter to only chunks from this session
+    Search Qdrant for chunks semantically similar to `query`.
     """
     if not query.strip():
         return []
 
-    from app.ingest.embed_service import embed_query
-    from app.ingest.store import _get_collection
-
     query_vec = embed_query(query)
-    collection = _get_collection()
+    _init_qdrant_collection()
+    qdrant = get_qdrant_client()
 
-    # Build where filter for session scoping
-    where = {"session_id": session_id} if session_id else None
+    query_filter = None
+    if session_id:
+        query_filter = Filter(
+            must=[FieldCondition(key="session_id", match=MatchValue(value=session_id))]
+        )
 
     try:
-        result = collection.query(
-            query_embeddings=[query_vec],
-            n_results=top_k,
-            include=["documents", "metadatas", "distances"],
-            where=where,
-        )
+        # qdrant-client >= 1.9 query_points API
+        search_result = qdrant.query_points(
+            collection_name=COLLECTION_NAME,
+            query=query_vec,
+            query_filter=query_filter,
+            limit=top_k,
+            with_payload=True,
+        ).points
     except Exception as exc:
-        print(f"[vector] Chroma query error: {exc}")
+        print(f"[vector] Qdrant search error: {exc}")
         return []
 
-    ids = result.get("ids", [[]])[0]
-    documents = result.get("documents", [[]])[0]
-    metadatas = result.get("metadatas", [[]])[0]
-    distances = result.get("distances", [[]])[0]
+    if not search_result:
+        return []
 
-    chunks = []
-    for chunk_id, text, meta, dist in zip(ids, documents, metadatas, distances):
-        # Chroma returns cosine distance (0 = identical, 2 = opposite).
-        # Convert to similarity: similarity = 1 - distance (for normalized vectors).
-        similarity = max(0.0, 1.0 - dist)
-        chunks.append({
-            "chunk_id": chunk_id,
-            "text": text,
-            "page_number": meta.get("page_number"),
-            "section_title": meta.get("section_title"),
-            "source_file": meta.get("source_file"),
-            "vector_score": similarity,
-        })
+    # Map results and attach scores
+    scored_chunks = []
+    chunk_ids_to_fetch = []
 
-    return chunks
+    for hit in search_result:
+        payload = hit.payload or {}
+        cid = payload.get("chunk_id")
+        text = payload.get("text")
+
+        if cid and text:
+            # Payload already contains text and metadata
+            chunk = {
+                "chunk_id": cid,
+                "source_file": payload.get("source_file", ""),
+                "page_number": payload.get("page_number", 1),
+                "section_title": payload.get("section_title", ""),
+                "text": text,
+                "vector_score": float(hit.score),
+                "session_id": payload.get("session_id"),
+            }
+            scored_chunks.append(chunk)
+        elif cid:
+            chunk_ids_to_fetch.append((cid, float(hit.score)))
+
+    if chunk_ids_to_fetch:
+        c_ids = [c[0] for c in chunk_ids_to_fetch]
+        mongo_chunks = get_chunks_by_ids(c_ids)
+        mongo_map = {c["chunk_id"]: c for c in mongo_chunks}
+        for cid, score in chunk_ids_to_fetch:
+            if cid in mongo_map:
+                chunk = mongo_map[cid].copy()
+                chunk["vector_score"] = score
+                scored_chunks.append(chunk)
+
+    return scored_chunks

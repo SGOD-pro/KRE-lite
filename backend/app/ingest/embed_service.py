@@ -1,65 +1,92 @@
 """
-embed_service.py — BGE-small-en-v1.5 embeddings via sentence-transformers.
+embed_service.py — AWS Bedrock Titan Text Embeddings v2.
 
-ARCHITECTURE.md: "BGE-small-en-v1.5 (ONNX, local, CPU) — zero API cost,
-zero network hop."
+Uses boto3 to invoke Amazon Bedrock Runtime.
+Model: amazon.titan-embed-text-v2:0 (1024 dimensions).
 
-We use sentence-transformers with the BGE-small-en-v1.5 model. The library
-downloads the model weights on first use and caches them locally. No external
-API call is made during inference — it runs entirely on CPU via PyTorch/ONNX.
-
-NOTE on ONNX: sentence-transformers can use the ONNX backend via
-optimum[onnxruntime]. For simplicity in the 48h window we use the standard
-PyTorch backend (same model, same weights) which sentence-transformers ships
-by default. The ONNX runtime can be swapped in later without changing the API.
-
-Vector dimension: 384 (BGE-small-en-v1.5)
+Features:
+- Sequential embedding with retry and exponential backoff on throttling.
+- embed_texts: Embeds a list of document chunks.
+- embed_query: Embeds a single search query.
 """
 from __future__ import annotations
 
+import json
+import time
 from functools import lru_cache
 from typing import List
 
-# Lazy import — model loads on first call, not at module import time.
-# This keeps startup fast and allows tests to mock without loading the model.
+from app.shared.config import TITAN_EMBED_MODEL_ID, get_boto3_client
+
+EMBEDDING_DIM = 1024
+BEDROCK_RETRY_ATTEMPTS = 5
 
 
 @lru_cache(maxsize=1)
-def _get_model():
-    """Lazy-load and cache the BGE-small-en-v1.5 SentenceTransformer model."""
-    from sentence_transformers import SentenceTransformer
-    print("[embed] Loading BGE-small-en-v1.5 model (first call — cached thereafter)...")
-    model = SentenceTransformer("BAAI/bge-small-en-v1.5")
-    print("[embed] Model loaded [OK]")
-    return model
+def _get_bedrock_client():
+    """Lazy-init boto3 Bedrock Runtime client."""
+    return get_boto3_client("bedrock-runtime")
+
+
+def _embed_single(text: str) -> List[float]:
+    """
+    Call Bedrock Titan Embed v2 for a single text string.
+    Retries on ThrottlingException or transient network errors.
+    """
+    if not text.strip():
+        # Bedrock Titan requires non-empty text
+        text = " "
+
+    client = _get_bedrock_client()
+    body = json.dumps({"inputText": text, "dimensions": EMBEDDING_DIM})
+
+    for attempt in range(BEDROCK_RETRY_ATTEMPTS):
+        try:
+            response = client.invoke_model(
+                modelId=TITAN_EMBED_MODEL_ID,
+                contentType="application/json",
+                accept="application/json",
+                body=body,
+            )
+            result = json.loads(response["body"].read())
+            return result["embedding"]
+        except Exception as exc:
+            err_str = str(exc)
+            if ("ThrottlingException" in err_str or "TooManyRequests" in err_str) and attempt < BEDROCK_RETRY_ATTEMPTS - 1:
+                wait_time = (2 ** attempt) * 0.5
+                print(f"[embed] Throttled on attempt {attempt + 1}, retrying in {wait_time:.1f}s...")
+                time.sleep(wait_time)
+                continue
+            if attempt < BEDROCK_RETRY_ATTEMPTS - 1:
+                time.sleep(0.3)
+                continue
+            raise RuntimeError(f"Bedrock Titan embedding failed after {BEDROCK_RETRY_ATTEMPTS} attempts: {exc}") from exc
+
+    raise RuntimeError("Bedrock Titan embedding failed.")
 
 
 def embed_texts(texts: List[str]) -> List[List[float]]:
     """
-    Embed a list of passage strings.
-    Returns one 384-dim vector per input.
-    Runs locally on CPU — no external API call.
+    Embed a list of chunk texts via AWS Bedrock Titan.
+    Returns a list of 1024-dimensional vectors.
     """
     if not texts:
         return []
-    model = _get_model()
-    # BGE models use a passage prefix for indexing passages
-    prefixed = [f"Represent this sentence for searching relevant passages: {t}" for t in texts]
-    embeddings = model.encode(prefixed, normalize_embeddings=True, show_progress_bar=False)
-    return embeddings.tolist()
+    
+    results = []
+    total = len(texts)
+    for i, text in enumerate(texts):
+        if total > 5 and (i + 1) % 10 == 0:
+            print(f"[embed] Embedding chunk {i + 1}/{total}...")
+        emb = _embed_single(text)
+        results.append(emb)
+    return results
 
 
 def embed_query(query: str) -> List[float]:
     """
-    Embed a single query string.
-    Returns a 384-dim vector. No prefix needed for queries with BGE models.
+    Embed a search query string via Bedrock Titan.
     """
     if not query.strip():
         raise ValueError("embed_query: query must not be empty")
-    model = _get_model()
-    embedding = model.encode(query, normalize_embeddings=True, show_progress_bar=False)
-    return embedding.tolist()
-
-
-# Dimension constant — used by store.py to create the Chroma collection
-EMBEDDING_DIM = 384
+    return _embed_single(query)
