@@ -1,12 +1,11 @@
 """
-tests/unit/test_health.py — Phase 0 exit criterion.
+tests/unit/test_health.py — Phase 0 exit criterion (must never regress).
 
-Verifies that GET /health returns HTTP 200 with {"status": "ok"}.
-This test must pass from commit one and never regress.
+Verifies GET /health returns HTTP 200 with {"status": "ok"}.
 
-PHASES.md Phase 0 exit criteria:
-  ✓ `docker-compose up` starts the FastAPI app, `/health` returns 200.
-  ✓ CI pipeline green on a trivial commit.
+Phase 1 update: /ingest is now implemented (returns 200, not 501).
+  The 501 test has been removed. /ingest is tested in test_ingestion.py.
+  /query remains a 501 stub until Phase 2.
 """
 from fastapi.testclient import TestClient
 
@@ -22,15 +21,9 @@ def test_health_returns_200():
 
 
 def test_health_returns_ok_status():
-    """GET /health body must be {\"status\": \"ok\"}."""
+    """GET /health body must be {"status": "ok"}."""
     response = client.get("/health")
     assert response.json() == {"status": "ok"}
-
-
-def test_ingest_stub_returns_501():
-    """POST /ingest is a Phase 1 stub — must return 501 Not Implemented."""
-    response = client.post("/ingest")
-    assert response.status_code == 501
 
 
 def test_query_stub_returns_501():
