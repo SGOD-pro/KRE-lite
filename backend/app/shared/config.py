@@ -38,9 +38,12 @@ MONGODB_DB  = os.getenv("MONGODB_DB", "cited_or_silent")
 QDRANT_ENDPOINT = os.getenv("QDRANT_ENDPOINT", "http://localhost:6333")
 QDRANT_API_KEY  = os.getenv("QDRANT_API_KEY", "")
 
+# ── AWS S3 ─────────────────────────────────────────────────────────────────────
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "cited-or-silent-docs")
+
 
 # ── boto3 client factory ────────────────────────────────────────────────────────
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=8)
 def get_boto3_client(service_name: str):
     """
     Creates a boto3 client using the correct session/profile based on ENV.
@@ -66,11 +69,15 @@ def get_mongo_client():
     return MongoClient(MONGODB_URI)
 
 
-@lru_cache(maxsize=1)
 def get_qdrant_client():
-    """Lazy singleton Qdrant client."""
+    """Returns a new Qdrant client to avoid idle connection drop on long Bedrock sleeps."""
     from qdrant_client import QdrantClient
     if QDRANT_API_KEY:
-        return QdrantClient(url=QDRANT_ENDPOINT, api_key=QDRANT_API_KEY)
+        return QdrantClient(url=QDRANT_ENDPOINT, api_key=QDRANT_API_KEY, timeout=30)
     else:
-        return QdrantClient(url=QDRANT_ENDPOINT)
+        return QdrantClient(url=QDRANT_ENDPOINT, timeout=30)
+
+
+def get_s3_client():
+    """Returns an S3 boto3 client (not cached — S3 client is thread-safe)."""
+    return get_boto3_client("s3")

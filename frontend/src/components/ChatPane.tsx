@@ -84,7 +84,7 @@ export const ChatPane: React.FC = () => {
 
           if (isRefused) {
             return (
-              <div key={msg.id} className="flex items-start gap-3">
+              <div key={msg.id} data-testid="refusal-bubble" className="flex items-start gap-3">
                 <div className="w-8 h-8 rounded-full bg-[#f0edeb] border border-[#dcc1b8] flex items-center justify-center shrink-0 mt-0.5">
                   <ShieldAlert className="w-4 h-4 text-[#56423c]" />
                 </div>
@@ -101,7 +101,7 @@ export const ChatPane: React.FC = () => {
 
           // Verified Answer Message
           return (
-            <div key={msg.id} className="flex items-start gap-3">
+            <div key={msg.id} data-testid="answer-bubble" className="flex items-start gap-3">
               <div className="w-8 h-8 rounded-full bg-[#9a4021] text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
                 <Bot className="w-4 h-4" />
               </div>
@@ -122,6 +122,7 @@ export const ChatPane: React.FC = () => {
                       return (
                         <button
                           key={idx}
+                          data-testid="citation-chip"
                           onClick={() => setActiveCitation(cite)}
                           className={`citation-chip ${
                             isActive ? 'bg-[#ffdbce] border-[#9a4021] ring-1 ring-[#9a4021]' : ''

@@ -62,7 +62,7 @@ def bm25_search(query: str, top_k: int = 20, session_id: str | None = None) -> L
                 "score": {"$meta": "searchScore"}
             }
         }
-    ]
+    ])
 
     try:
         cursor = db["chunks"].aggregate(pipeline)

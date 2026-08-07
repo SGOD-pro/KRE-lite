@@ -6,6 +6,8 @@ export interface Citation {
   page?: number;
   section?: string;
   quote?: string;
+  source_file?: string;
+  text?: string; // actual chunk text for SourceViewer
 }
 
 export interface Message {
@@ -21,7 +23,15 @@ export interface IngestedDoc {
   filename: string;
   chunks_created: number;
   pages: number;
+  s3_key?: string;
 }
+
+export type IngestionPhase =
+  | 'idle'
+  | 'uploading'   // POST /ingest running (upload + chunk)
+  | 'ready'       // /ingest complete, waiting for user to click "Start Analyzing"
+  | 'analyzing'   // POST /analyze running (Bedrock embeddings)
+  | 'done';       // /analyze complete, chat unlocked
 
 interface AppState {
   sessionId: string | null;
@@ -30,8 +40,11 @@ interface AppState {
   messages: Message[];
   activeCitation: Citation | null;
   activePage: number;
-  isIngesting: boolean;
+  ingestionPhase: IngestionPhase;
   isQuerying: boolean;
+
+  // Derived helpers
+  isIngesting: boolean; // true during uploading or analyzing
 
   // Actions
   setSessionId: (id: string | null) => void;
@@ -40,8 +53,9 @@ interface AppState {
   setActiveCitation: (citation: Citation | null) => void;
   setActivePage: (page: number) => void;
   resetSession: () => void;
-  
-  ingestFiles: (files: File[]) => Promise<void>;
+
+  uploadFiles: (files: File[]) => Promise<void>;
+  analyzeSession: () => Promise<void>;
   sendQuery: (question: string) => Promise<void>;
 }
 
@@ -56,8 +70,9 @@ export const useAppStore = create<AppState>()(
       messages: [],
       activeCitation: null,
       activePage: 1,
-      isIngesting: false,
+      ingestionPhase: 'idle',
       isQuerying: false,
+      isIngesting: false,
 
       setSessionId: (id) => set({ sessionId: id }),
       setDocuments: (docs) => set({ documents: docs }),
@@ -78,17 +93,19 @@ export const useAppStore = create<AppState>()(
           messages: [],
           activeCitation: null,
           activePage: 1,
-          isIngesting: false,
+          ingestionPhase: 'idle',
           isQuerying: false,
+          isIngesting: false,
         });
       },
 
-      ingestFiles: async (files: File[]) => {
-        set({ isIngesting: true });
+      /** Phase 1: upload files to S3 + chunk to MongoDB */
+      uploadFiles: async (files: File[]) => {
+        set({ ingestionPhase: 'uploading', isIngesting: true });
         try {
           const formData = new FormData();
           files.forEach((file) => formData.append('files', file));
-          
+
           const { sessionId } = get();
           if (sessionId) {
             formData.append('session_id', sessionId);
@@ -101,18 +118,48 @@ export const useAppStore = create<AppState>()(
 
           if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(errorData.detail || 'Failed to ingest documents.');
+            throw new Error(errorData.detail || 'Failed to upload documents.');
           }
 
           const data = await response.json();
+          // data: { status: "uploaded", session_id, documents: [...] }
           set({
             sessionId: data.session_id,
             documents: data.documents,
-            currentView: 'chat',
+            ingestionPhase: 'ready',
             isIngesting: false,
           });
         } catch (error) {
-          set({ isIngesting: false });
+          set({ ingestionPhase: 'idle', isIngesting: false });
+          throw error;
+        }
+      },
+
+      /** Phase 2: trigger Bedrock embeddings for the session */
+      analyzeSession: async () => {
+        const { sessionId } = get();
+        if (!sessionId) return;
+
+        set({ ingestionPhase: 'analyzing', isIngesting: true });
+        try {
+          const response = await fetch(`${API_BASE_URL}/analyze`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: sessionId }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to analyze documents.');
+          }
+
+          set({
+            ingestionPhase: 'done',
+            isIngesting: false,
+            currentView: 'chat',
+          });
+        } catch (error) {
+          set({ ingestionPhase: 'ready', isIngesting: false }); // revert to ready so user can retry
           throw error;
         }
       },
@@ -137,13 +184,8 @@ export const useAppStore = create<AppState>()(
           const { sessionId } = get();
           const response = await fetch(`${API_BASE_URL}/query`, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              question: question,
-              session_id: sessionId,
-            }),
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question, session_id: sessionId }),
           });
 
           if (!response.ok) {
@@ -152,13 +194,12 @@ export const useAppStore = create<AppState>()(
           }
 
           const data = await response.json();
-          // data: { status: "answered" | "refused", answer: str, citations: [...] }
+          // data: { status, answer, citations: [{chunk_id, page, section, quote, text, source_file}] }
 
-          const assistantMsgId = `assistant_${Date.now()}`;
           const assistantMessage: Message = {
-            id: assistantMsgId,
+            id: `assistant_${Date.now()}`,
             role: 'assistant',
-            text: data.answer || data.message || "I don't have enough information in the provided documents to answer that.",
+            text: data.answer || "I don't have enough information in the provided documents to answer that.",
             status: data.status,
             citations: data.citations || [],
             timestamp: Date.now(),
@@ -169,21 +210,18 @@ export const useAppStore = create<AppState>()(
             isQuerying: false,
           }));
 
-          // If answer has citations, set the first citation as active
+          // Auto-select first citation so Source Viewer shows real text immediately
           if (data.citations && data.citations.length > 0) {
             get().setActiveCitation(data.citations[0]);
           }
-
         } catch (error: any) {
-          const errorMsgId = `assistant_err_${Date.now()}`;
           const errorMessage: Message = {
-            id: errorMsgId,
+            id: `assistant_err_${Date.now()}`,
             role: 'assistant',
             text: `Error: ${error.message || 'Something went wrong.'}`,
             status: 'error',
             timestamp: Date.now(),
           };
-
           set((state) => ({
             messages: [...state.messages, errorMessage],
             isQuerying: false,
@@ -198,6 +236,7 @@ export const useAppStore = create<AppState>()(
         documents: state.documents,
         currentView: state.currentView,
         messages: state.messages,
+        ingestionPhase: state.ingestionPhase,
       }),
     }
   )
