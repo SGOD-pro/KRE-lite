@@ -2,7 +2,8 @@
 
 ## Deployment Model
 
-ONE FastAPI service running in the cloud, backed by AWS services (Bedrock, RDS, ElastiCache).
+ONE FastAPI service running in the cloud (designed to be easily wrap-able in AWS Lambda via Mangum in the future).
+Data layer consists of MongoDB Atlas (Primary DB) and Qdrant Cloud (Vector DB).
 Frontend powered by Vite, React, Tailwind v4, and shadcn/ui.
 
 ## System Architecture Flow
@@ -10,7 +11,7 @@ Frontend powered by Vite, React, Tailwind v4, and shadcn/ui.
 ```mermaid
 flowchart TD
     User([User]) --> UI[Vite React Frontend]
-    UI --> API[FastAPI Backend]
+    UI --> API[FastAPI Backend / Lambda]
     
     subgraph Backend
         API --> Chunker[Chunker]
@@ -18,10 +19,10 @@ flowchart TD
     end
     
     subgraph Storage
-        Chunker --> Cache[(ElastiCache / Redis)]
-        Chunker --> DB[(AWS RDS PostgreSQL + pgvector)]
-        QueryPlanner --> DB
-        QueryPlanner --> Cache
+        Chunker --> Mongo[(MongoDB Atlas)]
+        Chunker --> Qdrant[(Qdrant Cloud)]
+        QueryPlanner --> Mongo
+        QueryPlanner --> Qdrant
     end
     
     subgraph AI Models
@@ -44,10 +45,11 @@ backend/app/
 ├── ingest/
 │   ├── chunker.py          # splits by page + heading
 │   ├── embed_service.py    # AWS Bedrock Titan / NVIDIA embedding wrapper
-│   └── store.py            # AWS RDS (Postgres/pgvector) wrapper
+│   └── store.py            # MongoDB and Qdrant integration
 ├── query/
-│   ├── bm25_retriever.py
-│   ├── vector_retriever.py
+│   ├── bm25_retriever.py   # Atlas Search (keyword search)
+│   ├── vector_retriever.py # Qdrant search -> MongoDB fetch
+│   ├── fusion.py           # Reciprocal Rank Fusion (RRF)
 │   ├── rerank_service.py   
 │   ├── llm_service.py      # AWS Bedrock Nova / NVIDIA models
 │   ├── citation_verifier.py # THE core guardrail
@@ -60,7 +62,7 @@ backend/app/
 
 ## Cost Effectiveness
 
-By using AWS Bedrock, we only pay per token/request rather than running expensive GPU instances 24/7. ElastiCache reduces database load and repeat queries. RDS with `pgvector` scales cost-effectively for vector search without needing dedicated vector databases like Pinecone.
+By using AWS Bedrock, we only pay per token/request rather than running expensive GPU instances 24/7. MongoDB Atlas provides managed scalable document storage and keyword search, while Qdrant Cloud handles high-performance semantic vector retrieval.
 
 ## Hallucination Tests
 

@@ -14,9 +14,9 @@ contradicting a decision already made.
 
 ## Current Status
 
-**Phase:** Phase 0 complete, starting Phase 1
-**Hour mark (approx, since build start):** 1
-**Last updated:** 2026-08-07T03:35
+**Phase:** Phase 1 in progress (ingestion done, retrieval pending Bedrock/RDS wiring)
+**Hour mark (approx, since build start):** 2
+**Last updated:** 2026-08-07T04:30
 **Last updated by:** Antigravity
 
 ## Phase Checklist (mirror of PHASES.md — check off as you go)
@@ -42,16 +42,14 @@ Example format:
 
 - [Hour 0] Pivoted architecture from local minimum viable RAG to an enterprise cloud stack (AWS Bedrock, RDS, ElastiCache) and a frontend using Vite, React, Tailwind v4, and shadcn.
 - [Hour 1] Scaffolded backend and frontend in their respective folders (`backend/` and `frontend/`). Configured Vite with Tailwind v4, React Router DOM, and shadcn init.
+- [Hour 2] Replaced ChromaDB with RDS PostgreSQL + pgvector. Dropped sentence-transformers/torch/onnxruntime — all embeddings now via AWS Bedrock Titan Embed v2. Added config.py with dev/prod boto3 profile logic (dev: profile_name='aws', prod: IAM role). Region: ap-south-1. All 7 ingestion tests passing.
 
 ## Known Issues / Open Risks (things the next session needs to know
 ## about even if they're not blocking)
 
-<!--
-Example:
-- Citation verifier's fuzzy-match threshold (90% token overlap) may
-  be too strict — 2 of 10 sanity-check questions returned refusals
-  that should have answered. Needs tuning in Phase 2, not yet fixed.
--->
+- `python-multipart` was missing from requirements — discovered during API test and fixed.
+- Deprecation warning: FastAPI TestClient says to use `httpx2` instead of `httpx`. Harmless for now — do not fix until Phase 4 polish, it does not break tests.
+- Retrieval tests (test_retrieval.py) are written but skip when RDS/Bedrock is not reachable. Run them once RDS endpoint + Bedrock access confirmed in ap-south-1.
 
 ## What NOT To Redo
 
@@ -67,17 +65,17 @@ Example:
 
 ## Test Status (update after each pytest/Playwright run)
 
-- Unit tests (citation verifier): [passing / failing / not written yet]
-- Ingestion tests: [passing / failing / not written yet]
-- Retrieval sanity tests: [passing / failing / not written yet]
-- Adversarial refusal set: [X / Y refusing correctly — this number
-  matters more than any other test result, track it explicitly]
-- Playwright e2e: [passing / failing / not written yet]
-- CI pipeline: [green / red — if red, why, and is it blocking]
+- Unit tests (citation verifier): not written yet (Phase 2)
+- Ingestion tests: **7/7 PASSING** ✅
+- API endpoint tests: **6/6 PASSING** ✅ (health, 400, 422, happy-path mocked, query 503, query 400)
+- Retrieval sanity tests: written, require live RDS + Bedrock (skip until env is wired)
+- Adversarial refusal set: not written yet (Phase 2)
+- Playwright e2e: not written yet (Phase 3)
+- CI pipeline: **13/13 tests green locally** ✅; full run needs RDS+Bedrock env vars
 
 ## Next Session Should Start By
 
 <!-- One or two sentences, written by the session that's ending, for
 the session that's about to start. Be specific. -->
 
-Next session should start by scaffolding the backend with the AWS stack (Boto3 Bedrock, RDS, ElastiCache), and setting up the Vite frontend routing and views.
+Next session should start Phase 1 retrieval integration: wire up test_retrieval.py against a real RDS instance with pgvector installed and real Bedrock Titan embed calls. Then move to Phase 2 (llm_service.py + citation_verifier.py). Do NOT start Phase 2 until Recall@5 on 10 retrieval questions passes.

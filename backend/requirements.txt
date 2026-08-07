@@ -1,7 +1,27 @@
 fastapi
-uvicorn
+uvicorn[standard]
 pytest
+pytest-asyncio
+httpx
+python-multipart
+
+# PDF parsing
+pymupdf
+
+# AWS Bedrock (Titan Embeddings + Nova LLM)
 boto3
-sqlalchemy
-psycopg2-binary
-redis
+
+# MongoDB Atlas
+pymongo
+
+# Qdrant Cloud
+qdrant-client
+
+# Fuzzy matching for citation verifier (Phase 2)
+rapidfuzz
+
+# Numpy for cosine similarity in vector_retriever
+numpy
+
+# .env loading
+python-dotenv
