@@ -171,11 +171,13 @@ def verify_citations(
             for c in retrieved_chunks.values()
         ).lower()
 
-        # 1. Number verification: if the question specifies digits/amounts that do NOT exist
-        # anywhere in the retrieved chunks, refuse (prevent wrong entity swap / hallucination)
-        q_digits = re.findall(r"\b\d+\b", q_lower)
-        for d in q_digits:
-            if d not in all_chunks_text:
+        # 1. Number / quantity phrase verification:
+        # Check specific numerical phrases like "5 days", "$500", "90 days"
+        q_quantities = re.findall(r"(?:\$\s*\d+|\b\d+\s+[a-z]+|\b\d+\b)", q_lower)
+        for quant in q_quantities:
+            quant_clean = quant.strip()
+            pattern = r"\b" + re.escape(quant_clean) + r"\b"
+            if not re.search(pattern, all_chunks_text):
                 if any(q_lower.startswith(prefix) for prefix in [
                     "is it true", "does the", "do ", "is ", "are ", "why does", "why do",
                     "under what", "given that", "since ", "can ", "how many", "what is"
@@ -189,20 +191,23 @@ def verify_citations(
                 w for w in re.findall(r"\b[a-z]{3,}\b", premise_clause)
                 if w not in STOPWORDS
             ]
-            missing_premise_words = [w for w in premise_words if w not in all_chunks_text]
+            missing_premise_words = [w for w in premise_words if not re.search(r"\b" + re.escape(w) + r"\b", all_chunks_text)]
             if len(missing_premise_words) >= 2:
                 return _refusal()
 
-        # 3. Refutation guard: If answer explicitly denies/negates an entity from the question
-        # that doesn't exist in chunks, refuse instead of correcting
+        # 3. Refutation guard: If answer explicitly denies/negates a number or entity from the question, refuse
         q_words = set(re.findall(r"\b\w+\b", q_lower)) - STOPWORDS
         neg_matches = re.findall(
-            r"\b(?:not|never|no|neither|none|without|instead of|cannot|can't)\s+([a-zA-Z0-9]+)",
+            r"\b(?:not|never|no|neither|none|without|instead of|cannot|can't)\s+([a-zA-Z0-9$]+(?:\s+[a-zA-Z]+)?)",
             answer_draft.lower(),
         )
-        for w in neg_matches:
-            if w in q_words and w not in all_chunks_text:
-                return _refusal()
+        for np_phrase in neg_matches:
+            first_tok = np_phrase.split()[0]
+            if first_tok in q_words or np_phrase in q_lower:
+                if first_tok.isdigit() or first_tok.startswith("$"):
+                    return _refusal()
+                if not re.search(r"\b" + re.escape(np_phrase) + r"\b", all_chunks_text):
+                    return _refusal()
 
     verified: list[dict[str, Any]] = []
     seen_cites: set[tuple[int, str]] = set()

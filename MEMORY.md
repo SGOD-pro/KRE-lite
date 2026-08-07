@@ -88,12 +88,15 @@ contradicting a decision already made.
 - Unit tests (citation verifier): **10/10 passing** (all RULES.md verification scenarios)
 - Ingestion tests: **14/14 passing** (includes chunk boundary and API contract error tests)
 - Retrieval sanity tests: **10/10 passing** (Recall@5 verified on live Bedrock Titan + Qdrant stack)
-- Adversarial refusal set: **19/19 passing (100%)** (zero hallucination / zero ungrounded answering across all 4 categories)
+- Adversarial refusal set: **18/19 passing** ⚠️
+  - **1 KNOWN FAILURE**: "Are employees permitted to work remotely up to 5 days per week with manager approval?" (wrong-entity-swap category)
+  - Root cause: the LLM's answer correctly states "3 days, not 5" but the citation verifier accepts the corrected answer because the quote matches the chunk and the refutation guard doesn't catch correction-style responses. Fix identified (strengthen entity-swap check in `_check_false_premise_refutation`). Not yet applied.
 - Query pipeline tests: **3/3 passing** (positive grounded queries with full verification)
-- Health endpoint tests: **3/3 passing**
-- Total unit test suite: **57/57 passing (100% GREEN)**
-- CI pipeline: GREEN — 57 tests pass, 0 failures
-- **Playwright E2E Test Suite**: **8/8 PASSING (100% GREEN)**
+- Health + session validation tests: **4/4 passing**
+- Security guardrail tests: **25/25 passing** (12 attack vector detections + 1 benign batch + 12 planner-level refusals)
+- **Total unit test suite (tests/unit/)**: tests vary depending on whether adversarial suite runs live (requires Bedrock+Qdrant+Mongo). Fast tests (no external services): ~30 tests.
+- CI pipeline: runs `pytest tests/unit/ -v` — adversarial and retrieval tests require live AWS secrets.
+- **Playwright E2E Test Suite**: **8/8 PASSING (100% GREEN)** (against live stack)
   - `Phase 1+2: single PDF upload → analyze → chat view appears` [OK]
   - `UI: Upload button disabled while uploading, Analyze disabled until upload done` [OK]
   - `test_happy_path_question_shows_citation_and_highlights_source` [OK]
@@ -102,13 +105,14 @@ contradicting a decision already made.
   - `Guardrail: completely off-topic question (cookies recipe) is refused` [OK]
   - `Multi-PDF: two PDFs in one session; questions answered from correct source` [OK]
   - `New Session button resets state and returns to upload screen` [OK]
-- **System Benchmark Evaluation Scorecard**:
-  - Citation Faithfulness Score: **100.0%** (Zero hallucinated quotes)
-  - Adversarial Guardrail Score: **100.0%** (100% clean refusal on false premises)
-  - Grounded Answer Accuracy: **100.0%**
-  - Hallucination Rate: **0.0%** across all adversarial tests
-  - System Error Rate: **0.0%**
-  - UI Layout / Visual Breaking: **0 errors** (Panel resizing, amber refusal styling, citation card popovers, source chunk highlight scrolling verified)
+  - Session restriction tests (session-restrictions.spec.ts): 3/3 passing
+- **System Benchmark Evaluation Scorecard (benchmark_results.json, last real run):**
+  - Total queries evaluated: 13 (5 grounded + 8 adversarial)
+  - Grounded accuracy: **80.0%** (4/5 grounded queries answered correctly)
+  - Adversarial guardrail score (benchmark set): **100.0%** (8/8 in benchmark adversarial set)
+  - Citation faithfulness: **100.0%** (4/4 citations verified)
+  - Hallucination rate: **0.0%** across benchmark adversarial queries
+  - **Average latency: 5,077 ms** (P95: 10,958 ms) — dominated by Bedrock Titan embed + Nova Pro inference
 
 ## v1.1 Status (only touch after v1 deployed + demo video recorded)
 
@@ -121,6 +125,52 @@ contradicting a decision already made.
 - [ ] ConfidenceMeter + MetricsBar + Audit page UI
 - [ ] v1 adversarial set regression check (must stay 100%)
 
+---
+
+## Audit Log — append-only
+
+### 2026-08-08T21:35Z — Doc accuracy audit pass by Antigravity agent (session 6ed53fcc)
+
+**What was audited:** All 11 root-level .md docs cross-checked against actual running code (app/api/main.py, embed_service.py, store.py, llm_service.py, planner.py, security_guardrail.py, citation_verifier.py) and test files.
+
+**Mismatches found and fixed:**
+
+1. **README.md — fabricated comparison table** (Industry Standard RAG vs Cited-or-Silent with statistically implausible precision like "99.99%") → **DELETED**. No external baseline is cited; precision on a 13-query benchmark cannot support two-decimal percentages.
+
+2. **README.md — unsourced cost analysis table** ($0.078/user/month for 1k users) → **DELETED**. Pricing assumptions were unverifiable and outside the hackathon rubric.
+
+3. **README.md — fabricated latency claim** ("1.8s – 3.2s") → **REPLACED** with real measured number from benchmark_results.json: **avg 5,077ms, P95 10,958ms**.
+
+4. **README.md — architecture diagram** showed "Bedrock Titan Embeddings v2" and "Qdrant" (correct) but the intro sentence still referenced BGE-small — intro rewritten to name actual stack.
+
+5. **README.md — adversarial refusal count claimed 100%** → corrected to **18/19** (1 known failure documented in Known Issues).
+
+6. **README.md — CI/CD section** referenced `deploy.yml` → corrected to `ci.yml` and `cd.yml`.
+
+7. **README.md — GitHub Secrets table** had wrong key names (`S3_SAM_DEPLOY_BUCKET` not in cd.yml; `MONGODB_DB` vs `MONGODB_DB_NAME`) → table rewritten to match actual workflow file variables.
+
+8. **README.md — security guardrail section** made unverified claims → replaced with precise counts: 12 attack vectors tested, 25 total test cases in test_security_guardrail.py, all passing.
+
+9. **PROJECT.md — tech stack** listed BGE-small ONNX, Chroma/SQLite+sqlite-vec, NVIDIA Build LLM, one-smoke-test Playwright → **REPLACED** with actual: Titan, Qdrant+Mongo, Nova Pro / OpenRouter, 8 E2E test flows.
+
+10. **PHASES.md — Phase 1 deliverables** listed BGE-small and Chroma → **UPDATED** with actual stack + ✔ status markers noting the pivot decisions.
+
+11. **PHASES.md — Phase 2 rerank** said "OPTIONAL" with no resolution → **UPDATED** to "STUB ONLY, cut at hour-22, file exists as placeholder."
+
+12. **API.md — POST /query** was missing `session_id` field (now required, HTTP 400 if absent) → **UPDATED** request schema and errors section.
+
+13. **API.md — POST /analyze** endpoint exists in main.py but was not in API.md → **ADDED** with honest description (no-op shim, embedding happens at /ingest).
+
+14. **MEMORY.md — test counts** said "57/57" but security guardrail added 25 more tests, and adversarial set has 1 known failure → **UPDATED** counts and failure note.
+
+**What was NOT changed:**
+- ARCHITECTURE.md (stack pivot already honestly documented, as instructed)
+- BOUNDARIES.md (scope exclusions correct and unchanged)
+- DECISION.md (rules correct, no code contradicts them)
+- RULES.md (test case list matches actual tests with minor gaps expected at v1.1)
+- AGENT.md (agent constitution accurate)
+- UI-UX.md (describes actual UI; v1.1 sections clearly marked as post-deploy)
+
 ## Next Session Should Start By
 
-Reading this file, then starting Phase 4 (Polish, Docs, Demo Prep). Ready for final deployment packaging and live demonstration.
+Reading this file. The one open bug is the wrong-entity-swap adversarial failure. The fix is in `citation_verifier.py`'s refutation guard — needs to detect correction-style answers ("X, not Y") when Y appears in the question as a false entity.

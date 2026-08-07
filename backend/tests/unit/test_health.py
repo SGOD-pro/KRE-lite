@@ -25,5 +25,12 @@ def test_health_returns_ok_status():
 
 def test_query_empty_question_returns_400():
     """POST /query with empty question must return 400."""
-    response = client.post("/query", json={"question": ""})
+    response = client.post("/query", json={"question": "", "session_id": "test_session"})
     assert response.status_code == 400
+
+
+def test_query_missing_session_id_returns_400():
+    """POST /query with missing session_id must return 400."""
+    response = client.post("/query", json={"question": "What is the policy?"})
+    assert response.status_code == 400
+

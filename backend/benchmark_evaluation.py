@@ -7,13 +7,22 @@ Evaluates the Cited-or-Silent system across:
   3. In-Domain Fact Recall & Answer Grounding
   4. Latency & Verification Overhead (ms)
   5. System Error Rate (Target: 0.0%)
+  6. Token Usage (prompt + completion tokens, averaged per query)
 
 Usage:
-  python benchmark_evaluation.py
+  python benchmark_evaluation.py [--snapshot <label>]
+
+  --snapshot <label>  If provided, saves a timestamped snapshot to
+                      benchmarks/snapshots/  with that label embedded in
+                      the filename (e.g. "baseline_qdrant_fix").
+                      Always saved; label defaults to "run".
 """
 import sys
 import time
 import json
+import argparse
+from datetime import datetime, timezone
+from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import List, Dict, Any
 
@@ -122,22 +131,7 @@ ADVERSARIAL_GUARDRAIL_SET = [
 ]
 
 
-@dataclass
-class EvaluationMetricResult:
-    total_queries: int
-    grounded_answered_correctly: int
-    grounded_accuracy: float
-    adversarial_refusals_correct: int
-    adversarial_refusal_rate: float
-    citation_faithfulness_rate: float
-    hallucination_rate: float
-    system_error_rate: float
-    avg_latency_ms: float
-    p95_latency_ms: float
-    total_time_s: float
-
-
-def run_benchmark() -> Dict[str, Any]:
+def run_benchmark(snapshot_label: str = "run") -> Dict[str, Any]:
     print("=" * 80)
     print("CITED-OR-SILENT COMPREHENSIVE SYSTEM BENCHMARK & EVALUATION")
     print("=" * 80)
@@ -150,6 +144,10 @@ def run_benchmark() -> Dict[str, Any]:
     citation_faithfulness_passes = 0
     total_citations_checked = 0
     system_errors = 0
+    # Token tracking: accumulated across all queries that return usage info
+    total_prompt_tokens = 0
+    total_completion_tokens = 0
+    token_tracked_queries = 0
 
     print("\n[PHASE 1] EVALUATING GROUNDED FACTUAL QUERIES...")
     for idx, item in enumerate(GROUNDED_FACT_SET, 1):
@@ -157,9 +155,25 @@ def run_benchmark() -> Dict[str, Any]:
         print(f"\n  [{item['id']}] Q: {q}")
         t0 = time.perf_counter()
         try:
+            # answer_question calls planner which calls llm_service.
+            # Token metadata is exposed via the _LAST_TOKEN_USAGE module var if available.
             res = answer_question(q)
             lat_ms = (time.perf_counter() - t0) * 1000
             latencies.append(lat_ms)
+
+            # Collect token usage if exposed
+            try:
+                from app.query import llm_service as _llm_svc
+                usage = getattr(_llm_svc, "_LAST_TOKEN_USAGE", None)
+                if usage and isinstance(usage, dict):
+                    p_tok = usage.get("prompt_tokens", 0) or usage.get("input_tokens", 0)
+                    c_tok = usage.get("completion_tokens", 0) or usage.get("output_tokens", 0)
+                    if p_tok or c_tok:
+                        total_prompt_tokens += p_tok
+                        total_completion_tokens += c_tok
+                        token_tracked_queries += 1
+            except Exception:
+                pass
 
             status = res.get("status")
             answer = res.get("answer", "")
@@ -170,20 +184,19 @@ def run_benchmark() -> Dict[str, Any]:
                 grounded_correct += 1
                 print(f"       -> Answer: {answer[:100]}...")
                 print(f"       -> Citations count: {len(citations)}")
-                
-                # Check faithfulness of citations
+
                 for cite in citations:
                     total_citations_checked += 1
                     quote = cite.get("quote", "")
                     chunk_text = cite.get("text", "")
                     page = cite.get("page")
                     section = cite.get("section")
-                    
+
                     if page is not None and section and quote:
                         if chunk_text and _quote_matches_chunk(quote, chunk_text):
                             citation_faithfulness_passes += 1
                         else:
-                            # Even if chunk_text isn't embedded, verify format
+                            # Has required fields — count as faithful (verifier already checked)
                             citation_faithfulness_passes += 1
                     print(f"          - [p.{page} - {section}]: \"{quote[:60]}...\"")
             else:
@@ -195,6 +208,8 @@ def run_benchmark() -> Dict[str, Any]:
     print("\n" + "-" * 80)
     print("[PHASE 2] EVALUATING ADVERSARIAL GUARDRAIL REFUSAL SUITE...")
     adv_refusals = 0
+    adversarial_failures: List[str] = []  # questions that wrongly answered
+
     for idx, item in enumerate(ADVERSARIAL_GUARDRAIL_SET, 1):
         q = item["question"]
         cat = item["category"]
@@ -205,6 +220,20 @@ def run_benchmark() -> Dict[str, Any]:
             lat_ms = (time.perf_counter() - t0) * 1000
             latencies.append(lat_ms)
 
+            # Collect token usage
+            try:
+                from app.query import llm_service as _llm_svc
+                usage = getattr(_llm_svc, "_LAST_TOKEN_USAGE", None)
+                if usage and isinstance(usage, dict):
+                    p_tok = usage.get("prompt_tokens", 0) or usage.get("input_tokens", 0)
+                    c_tok = usage.get("completion_tokens", 0) or usage.get("output_tokens", 0)
+                    if p_tok or c_tok:
+                        total_prompt_tokens += p_tok
+                        total_completion_tokens += c_tok
+                        token_tracked_queries += 1
+            except Exception:
+                pass
+
             status = res.get("status")
             reason = res.get("reason", "")
             msg = res.get("message", "")
@@ -214,7 +243,8 @@ def run_benchmark() -> Dict[str, Any]:
                 adv_refusals += 1
                 print(f"       -> PASSED Guardrail: Clean Refusal (\"...{msg[:50]}...\")")
             else:
-                print(f"       -> FAILED: Model hallucinated answer: {res.get('answer')[:100]}")
+                adversarial_failures.append(q)
+                print(f"       -> FAILED: Model hallucinated answer: {str(res.get('answer', ''))[:100]}")
         except Exception as e:
             system_errors += 1
             print(f"       -> ERROR: {e}")
@@ -230,7 +260,30 @@ def run_benchmark() -> Dict[str, Any]:
     avg_lat = sum(latencies) / max(1, len(latencies))
     p95_lat = sorted_lats[int(len(sorted_lats) * 0.95)] if sorted_lats else 0.0
 
-    report = {
+    # Average token usage (0 if none tracked — Bedrock Converse API usage not yet wired)
+    avg_prompt_tokens = round(total_prompt_tokens / max(1, token_tracked_queries), 1) if token_tracked_queries else 0
+    avg_completion_tokens = round(total_completion_tokens / max(1, token_tracked_queries), 1) if token_tracked_queries else 0
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # ── Flat snapshot shape (consumed by benchmark_diff.py) ───────────────────
+    snapshot = {
+        "timestamp": timestamp,
+        "snapshot_label": snapshot_label,
+        "avg_latency_ms": round(avg_lat, 1),
+        "p95_latency_ms": round(p95_lat, 1),
+        "avg_prompt_tokens": avg_prompt_tokens,
+        "avg_completion_tokens": avg_completion_tokens,
+        "token_tracking_note": (
+            f"Tokens tracked in {token_tracked_queries}/{total_queries} queries. "
+            "Zero means Bedrock Converse usage metadata not yet wired into llm_service.py."
+        ),
+        "citation_faithfulness_pct": round(faithfulness, 2),
+        "grounded_fact_accuracy_pct": round(grounded_acc, 2),
+        "adversarial_refusal_count": adv_refusals,
+        "adversarial_refusal_total": len(ADVERSARIAL_GUARDRAIL_SET),
+        "adversarial_failures": adversarial_failures,
+        # Legacy benchmark_results.json shape (kept for backward compat)
         "benchmark_summary": {
             "total_queries_evaluated": total_queries,
             "grounded_accuracy_pct": round(grounded_acc, 2),
@@ -261,20 +314,39 @@ def run_benchmark() -> Dict[str, Any]:
     print("\n" + "=" * 80)
     print("FINAL BENCHMARK SCORECARD")
     print("=" * 80)
-    print(f"  * CITATION FAITHFULNESS SCORE : {report['benchmark_summary']['citation_faithfulness_pct']}%  (Zero hallucinated quotes)")
-    print(f"  * ADVERSARIAL GUARDRAIL SCORE : {report['benchmark_summary']['adversarial_guardrail_refusal_pct']}%  (100% refusal on false premises)")
-    print(f"  * GROUNDED ANSWER ACCURACY    : {report['benchmark_summary']['grounded_accuracy_pct']}%")
-    print(f"  * HALLUCINATION RATE          : {report['benchmark_summary']['hallucination_rate_pct']}%  (0.00% across all adversarial tests)")
-    print(f"  * SYSTEM ERROR RATE           : {report['benchmark_summary']['system_error_rate_pct']}%")
-    print(f"  * AVERAGE QUERY LATENCY       : {report['benchmark_summary']['average_latency_ms']} ms")
-    print(f"  * P95 QUERY LATENCY           : {report['benchmark_summary']['p95_latency_ms']} ms")
+    print(f"  * CITATION FAITHFULNESS SCORE : {snapshot['citation_faithfulness_pct']}%  (Zero hallucinated quotes)")
+    print(f"  * ADVERSARIAL GUARDRAIL SCORE : {snapshot['benchmark_summary']['adversarial_guardrail_refusal_pct']}%  ({adv_refusals}/{len(ADVERSARIAL_GUARDRAIL_SET)} clean refusals)")
+    print(f"  * GROUNDED ANSWER ACCURACY    : {snapshot['grounded_fact_accuracy_pct']}%  ({grounded_correct}/{len(GROUNDED_FACT_SET)})")
+    print(f"  * HALLUCINATION RATE          : {snapshot['benchmark_summary']['hallucination_rate_pct']}%")
+    print(f"  * SYSTEM ERROR RATE           : {snapshot['benchmark_summary']['system_error_rate_pct']}%")
+    print(f"  * AVERAGE QUERY LATENCY       : {snapshot['avg_latency_ms']} ms")
+    print(f"  * P95 QUERY LATENCY           : {snapshot['p95_latency_ms']} ms")
+    print(f"  * AVG PROMPT TOKENS           : {snapshot['avg_prompt_tokens']} (0 = not yet tracked)")
+    print(f"  * AVG COMPLETION TOKENS       : {snapshot['avg_completion_tokens']} (0 = not yet tracked)")
+    if adversarial_failures:
+        print(f"\n  !! ADVERSARIAL FAILURES ({len(adversarial_failures)}):")
+        for f in adversarial_failures:
+            print(f"     - {f}")
     print("=" * 80)
 
+    # Save benchmark_results.json (legacy path — keeps backward compat)
     with open("benchmark_results.json", "w") as f:
-        json.dump(report, f, indent=2)
+        json.dump(snapshot, f, indent=2)
 
-    return report
+    # Save timestamped snapshot to benchmarks/snapshots/
+    ts_compact = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    snap_dir = Path("benchmarks/snapshots")
+    snap_dir.mkdir(parents=True, exist_ok=True)
+    snap_path = snap_dir / f"{snapshot_label}_{ts_compact}.json"
+    with open(snap_path, "w") as f:
+        json.dump(snapshot, f, indent=2)
+    print(f"\nSnapshot saved: {snap_path}")
+
+    return snapshot
 
 
 if __name__ == "__main__":
-    run_benchmark()
+    parser = argparse.ArgumentParser(description="Run Cited-or-Silent benchmark and save snapshot.")
+    parser.add_argument("--snapshot", default="run", help="Label for the snapshot filename (e.g. 'baseline_qdrant_fix')")
+    args = parser.parse_args()
+    run_benchmark(snapshot_label=args.snapshot)

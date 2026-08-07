@@ -79,8 +79,8 @@ def test_ingest_pdf_happy_path_mocked():
     pdf_bytes = FIXTURE_PDF.read_bytes()
 
     with (
-        patch("app.api.main.add_chunks") as mock_store,
-        patch("app.api.main.invalidate_index") as mock_invalidate,
+        patch("app.ingest.store.add_chunks") as mock_store,
+        patch("app.query.bm25_retriever.invalidate_index") as mock_invalidate,
     ):
         mock_store.return_value = None
         mock_invalidate.return_value = None
@@ -107,13 +107,33 @@ def test_ingest_pdf_happy_path_mocked():
         assert chunk["chunk_id"]
 
 
-# ── /query — Phase 2 stub ─────────────────────────────────────────────────────
+# ── /query ────────────────────────────────────────────────────────────────────
 
 def test_query_returns_200():
-    r = client.post("/query", json={"question": "What is the notice period?"})
-    assert r.status_code == 200
+    with patch("app.api.main.answer_question") as mock_answer:
+        mock_answer.return_value = {
+            "status": "answered",
+            "answer": "The notice period is 30 days.",
+            "citations": [],
+        }
+        r = client.post(
+            "/query",
+            json={"question": "What is the notice period?", "session_id": "test_session"},
+        )
+        assert r.status_code == 200
 
 
 def test_query_empty_question_returns_400():
-    r = client.post("/query", json={"question": "   "})
+    r = client.post("/query", json={"question": "   ", "session_id": "test_session"})
     assert r.status_code == 400
+    assert "Empty question" in r.json()["detail"]
+
+
+def test_query_missing_session_id_returns_400():
+    r = client.post("/query", json={"question": "What is the notice period?"})
+    assert r.status_code == 400
+    assert "session_id is required" in r.json()["detail"]
+
+    r2 = client.post("/query", json={"question": "What is the notice period?", "session_id": "   "})
+    assert r2.status_code == 400
+    assert "session_id is required" in r2.json()["detail"]

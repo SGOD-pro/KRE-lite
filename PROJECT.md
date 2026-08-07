@@ -43,26 +43,27 @@ Everything in this doc set exists to protect that one claim within a
    first-class, tested product behavior. See RULES.md for the
    adversarial test set that proves it.
 
-## Tech Stack (deliberately minimal)
+## Tech Stack (as built)
 
 ```text
-Backend:    FastAPI (single service, single process)
-Embedding:  BGE-small-en-v1.5 (ONNX, local, CPU) — reused component,
-            zero API cost, zero network hop
-Rerank:     NVIDIA Build (build.nvidia.com) — optional stage, cut
-            first if time runs short (see PHASES.md Phase 2 note)
-LLM:        Single call via NVIDIA Build or OpenRouter, structured
-            JSON output (function-calling / JSON mode)
-Retrieval:  BM25 (rank-bm25) -> vector search (single index) ->
-            optional rerank -> LLM -> citation verifier
-Storage:    Local Chroma or SQLite+sqlite-vec for the demo. Postgres
-            + pgvector ONLY if infra time allows — see BOUNDARIES.md.
-Frontend:   Single-page React/Next.js app — 2-pane layout
+Backend:    FastAPI (single service, single process, uvicorn)
+Embedding:  AWS Bedrock Titan Text Embeddings v2
+            (amazon.titan-embed-text-v2:0, 1024-dim, via boto3)
+Rerank:     Not implemented — cut per PHASES.md hour-22 rule.
+            rerank_service.py exists as a stub only.
+LLM:        AWS Bedrock Nova Pro (apac.amazon.nova-pro-v1:0),
+            single structured-JSON call via Converse API.
+            OpenRouter (meta-llama/llama-3.1-70b-instruct) as fallback.
+Retrieval:  BM25 (rank-bm25, in-process) + Qdrant vector search
+            -> Reciprocal Rank Fusion -> LLM -> citation verifier
+Storage:    Qdrant Cloud (vector + payload) + MongoDB Atlas
+            (full chunk text). Dual-write on ingest.
+Frontend:   Vite + React + TypeScript — 2-pane layout
             (chat + source viewer with highlighted citation)
 Testing:    pytest (unit + adversarial refusal set), Playwright
-            (one smoke-test e2e flow)
-Deploy:     docker-compose for local run. NO cloud deployment
-            required for Round 1 — see BOUNDARIES.md.
+            (8 E2E test flows in tests/e2e/)
+Deploy:     docker-compose (backend + frontend). CI via GitHub Actions
+            ci.yml. CD via cd.yml (manual trigger, workflow_dispatch).
 ```
 
 ## What Judges See in the Demo (3 minutes)

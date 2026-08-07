@@ -21,11 +21,13 @@ from app.query.bm25_retriever import bm25_search
 from app.query.fusion import reciprocal_rank_fusion
 from app.query.llm_service import generate_answer
 from app.query.citation_verifier import verify_citations, REFUSAL_MESSAGE
+from app.query.security_guardrail import detect_prompt_injection, sanitize_input_text
 
 
 def answer_question(question: str, session_id: str | None = None) -> dict[str, Any]:
     """
     Executes the end-to-end question answering pipeline:
+      0. Screen against Prompt Injection & Jailbreak attacks.
       1. Retrieve top vector candidates from Qdrant.
       2. Retrieve top BM25 candidates from keyword store.
       3. Fuse candidates using Reciprocal Rank Fusion.
@@ -34,13 +36,25 @@ def answer_question(question: str, session_id: str | None = None) -> dict[str, A
       6. Verifies citation quotes against actual chunk text deterministically.
       7. Returns verified answer or structured refusal.
     """
-    clean_question = question.strip() if question else ""
-    if not clean_question:
+    raw_question = question.strip() if question else ""
+    if not raw_question:
         return {
             "status": "refused",
             "reason": "no_grounded_answer",
             "message": REFUSAL_MESSAGE,
         }
+
+    # ── 0. Prompt Injection & Security Defense ──────────────────────────────
+    is_injection, reason = detect_prompt_injection(raw_question)
+    if is_injection:
+        print(f"[SECURITY] REFUSAL: {reason}")
+        return {
+            "status": "refused",
+            "reason": "no_grounded_answer",
+            "message": REFUSAL_MESSAGE,
+        }
+
+    clean_question = sanitize_input_text(raw_question)
 
     print(f"\n[QUERY] Starting query pipeline for session: {session_id}")
     print(f"[QUERY] Question: {clean_question!r}")

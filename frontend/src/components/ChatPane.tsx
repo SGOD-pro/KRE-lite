@@ -77,6 +77,7 @@ const RichText: React.FC<{ text: string }> = ({ text }) => {
 // ── Chat Pane Component ─────────────────────────────────────────────────────
 export const ChatPane: React.FC = () => {
   const {
+    sessionId,
     messages,
     sendQuery,
     isQuerying,
@@ -130,7 +131,7 @@ export const ChatPane: React.FC = () => {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isQuerying) return;
+    if (!sessionId || !input.trim() || isQuerying) return;
     const q = input;
     setInput('');
     await sendQuery(q);
@@ -286,15 +287,15 @@ export const ChatPane: React.FC = () => {
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask a question..."
-            disabled={isQuerying}
-            className="w-full bg-[#f1f5f9] border border-[#e2e8f0] focus:border-[#9a4021] focus:ring-1 focus:ring-[#9a4021] rounded-full py-3.5 pl-5 pr-28 text-sm text-[#0f172a] placeholder-[#94a3b8] outline-none transition-all"
+            placeholder={!sessionId ? 'Please upload documents to start...' : 'Ask a question...'}
+            disabled={!sessionId || isQuerying}
+            className="w-full bg-[#f1f5f9] border border-[#e2e8f0] focus:border-[#9a4021] focus:ring-1 focus:ring-[#9a4021] rounded-full py-3.5 pl-5 pr-28 text-sm text-[#0f172a] placeholder-[#94a3b8] outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           />
 
           <button
             type="submit"
-            disabled={!input.trim() || isQuerying}
-            className="absolute right-1.5 top-1.5 bottom-1.5 bg-[#9a4021] hover:bg-[#b95837] text-white text-xs font-semibold px-4 rounded-full flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+            disabled={!sessionId || !input.trim() || isQuerying}
+            className="absolute right-1.5 top-1.5 bottom-1.5 bg-[#9a4021] hover:bg-[#b95837] text-white text-xs font-semibold px-4 rounded-full flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
             <span>Send</span>
             <Send className="w-3.5 h-3.5" />

@@ -174,8 +174,14 @@ def query(payload: QueryPayload) -> dict[str, Any]:
     if not payload.question or not payload.question.strip():
         raise HTTPException(status_code=400, detail="Empty question")
 
+    if not payload.session_id or not payload.session_id.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="session_id is required. Please upload documents first.",
+        )
+
     try:
-        result = answer_question(payload.question, session_id=payload.session_id)
+        result = answer_question(payload.question, session_id=payload.session_id.strip())
         return result
     except Exception as exc:
         raise HTTPException(

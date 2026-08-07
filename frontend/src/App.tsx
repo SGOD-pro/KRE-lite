@@ -4,9 +4,10 @@ import { UploadScreen } from './components/UploadScreen';
 import { MainLayout } from './components/MainLayout';
 
 export const App: React.FC = () => {
-  const { currentView } = useAppStore();
+  const { currentView, sessionId } = useAppStore();
 
-  if (currentView === 'upload') {
+  // If there is no active session_id, always show the upload screen
+  if (!sessionId || currentView === 'upload') {
     return <UploadScreen />;
   }
 

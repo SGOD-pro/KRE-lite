@@ -171,6 +171,22 @@ export const useAppStore = create<AppState>()(
       sendQuery: async (question: string) => {
         if (!question.trim()) return;
 
+        const { sessionId } = get();
+        if (!sessionId) {
+          const errorMessage: Message = {
+            id: `assistant_err_${Date.now()}`,
+            role: 'assistant',
+            text: 'No active session. Please upload documents first.',
+            status: 'error',
+            timestamp: Date.now(),
+          };
+          set((state) => ({
+            messages: [...state.messages, errorMessage],
+            isQuerying: false,
+          }));
+          return;
+        }
+
         const userMsgId = `user_${Date.now()}`;
         const userMessage: Message = {
           id: userMsgId,
@@ -185,7 +201,6 @@ export const useAppStore = create<AppState>()(
         }));
 
         try {
-          const { sessionId } = get();
           const response = await fetch(`${API_BASE_URL}/query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -238,7 +253,7 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         sessionId: state.sessionId,
         documents: state.documents,
-        currentView: state.currentView,
+        currentView: state.sessionId ? state.currentView : 'upload',
         messages: state.messages,
         ingestionPhase: state.ingestionPhase,
       }),

@@ -35,9 +35,12 @@ and test the PDF path in 48 hours — see BOUNDARIES.md).
 **Request:**
 ```json
 {
-  "question": "What is the notice period for resignation?"
+  "question": "What is the notice period for resignation?",
+  "session_id": "session_1234567890"
 }
 ```
+
+`session_id` is **required** (HTTP 400 if missing or empty). It is returned by `/ingest` and scopes the retrieval to that document set.
 
 **Response — answered case:**
 ```json
@@ -69,11 +72,20 @@ branches on this field, not on whether `citations` is empty — the
 API contract makes refusal a first-class response shape, not an
 edge case the client has to infer (DECISION.md Rule 5, AGENT.md).
 
-**Errors:**
-- `400` — empty question
-- `503` — LLM or rerank provider unavailable (return this cleanly,
-  do not fall back to an unverified answer just because the provider
-  call failed — DECISION.md Rule 6 applies even under infra failure)
+  - `400` — empty question, or missing/empty `session_id`
+  - `503` — LLM or provider unavailable
+
+## POST /analyze
+
+Compatibility endpoint. Returns `{"status": "analyzed"}` immediately.
+Originally planned as a two-phase ingest (upload then analyze separately).
+Currently a no-op shim — embedding happens during `/ingest`. Kept for
+frontend compatibility; may be removed or expanded in v1.1.
+
+**Request:** `{"session_id": "..."}` (optional)
+**Response:** `{"status": "analyzed"}`
+
+---
 
 ## v1.1 Additions (post-deploy only)
 

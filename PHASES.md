@@ -34,18 +34,22 @@ Exit Criteria:
 
 Deliverables:
 - chunker.py: splits by page + heading, enforces DECISION.md Rule 7
-  (no chunk without page_number + section_title).
-- embed_service.py: BGE-small-en-v1.5 ONNX, local.
-- store.py: Chroma or sqlite-vec.
-- bm25_retriever.py + vector_retriever.py.
-- POST /ingest working end to end on the real demo document set.
+  (no chunk without page_number + section_title). **✔ BUILT**
+- embed_service.py: AWS Bedrock Titan Text Embeddings v2
+  (amazon.titan-embed-text-v2:0, 1024-dim). **✔ BUILT**
+  *(Note: PHASES.md originally specified BGE-small ONNX — pivoted
+  to Bedrock Titan per user directive at Phase 1; see MEMORY.md decisions.)*
+- store.py: Qdrant Cloud (vectors) + MongoDB Atlas (text). **✔ BUILT**
+  *(Note: PHASES.md originally specified Chroma/sqlite-vec — pivoted
+  to Qdrant+Mongo per user directive at Phase 1; see MEMORY.md.)*
+- bm25_retriever.py + vector_retriever.py. **✔ BUILT**
+- POST /ingest working end to end on the real demo document set. **✔ BUILT**
 
 Exit Criteria:
 - All chunks from the demo doc set have non-null page_number and
-  section_title — verified by test, not eyeballing.
+  section_title — verified by test, not eyeballing. **✔ PASSING (test_ingestion.py)**
 - A known factual question retrieves the chunk that actually
-  contains the answer, in the top 5 results (basic Recall@5 sanity
-  check on ~10 hand-written questions, not a formal benchmark).
+  contains the answer, in the top 5 results. **✔ PASSING (test_retrieval.py, 10 questions)**
 
 ---
 
@@ -55,23 +59,20 @@ Exit Criteria:
 frontend.**
 
 Deliverables:
-- llm_service.py: single structured-output call.
-- citation_verifier.py: the core guardrail (ARCHITECTURE.md).
-- planner.py: wires retrieve -> generate -> verify -> respond.
-- POST /query returns either a verified answer or a clean refusal.
-- rerank_service.py (NVIDIA Build) — OPTIONAL. Attempt after the
-  above is solid. If it's not working cleanly by hour 22, cut it and
-  note the decision in ARCHITECTURE.md. Do not let an optional
-  precision improvement threaten the core deliverable.
+- llm_service.py: single structured-output call (AWS Bedrock Nova Pro). **✔ BUILT**
+- citation_verifier.py: the core guardrail (ARCHITECTURE.md). **✔ BUILT**
+- planner.py: wires retrieve -> generate -> verify -> respond. **✔ BUILT**
+- POST /query returns either a verified answer or a clean refusal. **✔ BUILT**
+- rerank_service.py (NVIDIA Build) — **STUB ONLY. Cut at hour-22** per this rule.
+  Not implemented. File exists as empty placeholder.
 
 Exit Criteria:
 - On the "should answer" test set (RULES.md): correct answers with
-  verified citations.
+  verified citations. **✔ PASSING (test_query_pipeline.py, 3/3)**
 - On the "should refuse" adversarial test set (RULES.md): clean
-  refusals, zero fabricated answers.
+  refusals, zero fabricated answers. **18/19 passing (1 known failure — see MEMORY.md)**
 - Citation verifier has its own unit tests independent of the full
-  pipeline (feed it hand-crafted fake LLM outputs, confirm it
-  catches bad citations).
+  pipeline. **✔ PASSING (test_citation_verifier.py)**
 
 ---
 
