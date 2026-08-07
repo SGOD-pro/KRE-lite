@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  cited-or-silent-backend
+  SAM Template for the Cited-or-Silent FastAPI backend
+
+Globals:
+  Function:
+    Timeout: 300
+    MemorySize: 1024
+    Environment:
+      Variables:
+        ENV: prod
+        AWS_REGION: !Ref AWS::Region
+        TITAN_EMBED_MODEL_ID: !Ref TitanEmbedModelId
+        NOVA_LLM_MODEL_ID: !Ref NovaLlmModelId
+        S3_BUCKET_NAME: !Ref S3BucketName
+        QDRANT_ENDPOINT: !Ref QdrantEndpoint
+        QDRANT_API_KEY: !Ref QdrantApiKey
+        MONGODB_URI: !Ref MongoDbUri
+        MONGODB_DB: !Ref MongoDbName
+
+Parameters:
+  TitanEmbedModelId:
+    Type: String
+    Default: amazon.titan-embed-text-v2:0
+  NovaLlmModelId:
+    Type: String
+    Default: amazon.nova-pro-v1:0
+  S3BucketName:
+    Type: String
+    Default: cited-or-silent-docs
+  QdrantEndpoint:
+    Type: String
+    NoEcho: true
+  QdrantApiKey:
+    Type: String
+    NoEcho: true
+  MongoDbUri:
+    Type: String
+    NoEcho: true
+  MongoDbName:
+    Type: String
+    Default: cited_or_silent
+
+Resources:
+  FastApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: handler.handler
+      Runtime: python3.13
+      Architectures:
+        - x86_64
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+              Resource: "*"
+        - S3CrudPolicy:
+            BucketName: !Ref S3BucketName
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+
+Outputs:
+  ApiUrl:
+    Description: "API Gateway endpoint URL for Prod environment"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
