@@ -51,12 +51,11 @@ def get_boto3_client(service_name: str):
     import boto3
     kwargs = {"region_name": AWS_REGION}
 
-    if ENV == "dev":
-        session = boto3.Session(profile_name="aws")
-    elif ENV == "local":
+    if ENV == "local":
         session = boto3.Session(profile_name="local")
         kwargs["endpoint_url"] = LOCALSTACK_ENDPOINT
     else:
+        # Dev and Prod modes will pick up AWS_ACCESS_KEY_ID or IAM roles automatically
         session = boto3.Session()
 
     return session.client(service_name, **kwargs)
