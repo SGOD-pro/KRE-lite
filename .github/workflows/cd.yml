@@ -7,9 +7,19 @@ on:
     paths:
       - "backend/**"
       - "frontend/**"
-      - ".github/workflows/deploy.yml"
+      - ".github/workflows/cd.yml"
 
   workflow_dispatch:
+    inputs:
+      component:
+        description: 'Select component to deploy'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - backend
+          - frontend
 
 permissions:
   contents: read
@@ -33,16 +43,15 @@ jobs:
           filters: |
             backend:
               - 'backend/**'
-
             frontend:
               - 'frontend/**'
 
   deploy-backend:
     name: Deploy Backend (AWS Lambda)
     needs: changes
-
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.backend == 'true'
-
+    if: >-
+      (github.event_name == 'push' && (needs.changes.outputs.backend == 'true' || github.ref == 'refs/heads/main')) ||
+      (github.event_name == 'workflow_dispatch' && (inputs.component == 'all' || inputs.component == 'backend'))
     runs-on: ubuntu-latest
 
     steps:
@@ -89,9 +98,9 @@ jobs:
   deploy-frontend:
     name: Deploy Frontend (Vercel)
     needs: changes
-
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend == 'true'
-
+    if: >-
+      (github.event_name == 'push' && (needs.changes.outputs.frontend == 'true' || github.ref == 'refs/heads/main')) ||
+      (github.event_name == 'workflow_dispatch' && (inputs.component == 'all' || inputs.component == 'frontend'))
     runs-on: ubuntu-latest
 
     defaults:
@@ -105,6 +114,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Install Frontend Dependencies
+        run: npm ci
 
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
