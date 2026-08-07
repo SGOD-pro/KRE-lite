@@ -112,19 +112,21 @@ def _chunk_page_lines(
         text = " ".join(buf).strip()
         # Collapse excessive whitespace
         text = re.sub(r"\s+", " ", text)
-        if len(text.split()) < 10:  # skip near-empty fragments
+        if len(text.split()) < 5:  # skip near-empty fragments (lowered from 10)
             return None
         return {"text": text, "section_title": sec, "page_number": page_number}
 
     for line in page_lines:
         if line["is_heading"]:
+            # Normalize excess whitespace in heading text (e.g. from multi-span PDFs)
+            heading_text = re.sub(r"\s+", " ", line["text"]).strip()
             # Flush previous buffer as a chunk
             if buffer:
                 chunk = flush(buffer, section)
                 if chunk:
                     chunks.append(chunk)
                 buffer = []
-            section = line["text"]
+            section = heading_text
         else:
             buffer.append(line["text"])
 
@@ -184,6 +186,16 @@ def chunk_document(pdf_path: str | Path) -> list[dict[str, Any]]:
         for chunk in page_chunks:
             if not chunk.get("section_title"):
                 chunk["section_title"] = f"Untitled section, page {page_number}"
+
+        # Page-level fallback: if a page produced NO chunks (e.g. columnar author
+        # blocks, short-text pages), include the raw page text as one chunk so
+        # critical metadata (author names, headings) is never silently dropped.
+        if not page_chunks and page_text.strip() and len(page_text.split()) >= 5:
+            page_chunks = [{
+                "text": re.sub(r"\s+", " ", page_text).strip(),
+                "section_title": current_section or f"Page {page_number}",
+                "page_number": page_number,
+            }]
 
         all_chunks.extend(page_chunks)
 

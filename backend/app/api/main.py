@@ -1,147 +1,47 @@
 """
-main.py — FastAPI application.
+app/api/main.py — FastAPI application entry-point.
 
-Endpoints:
-  POST /ingest   — upload PDF(s) to S3 + chunk to MongoDB; returns session_id immediately.
-  POST /analyze  — trigger Bedrock embeddings + Qdrant upsert for a given session_id.
-  POST /query    — hybrid retrieval + LLM generation with guardrails.
-  GET  /health   — liveness check.
-
-S3 Flow:
-  1. On startup, check/create the S3 bucket.
-  2. /ingest  → upload to S3 in parallel + chunk to MongoDB (fast, no embedding).
-  3. /analyze → embed chunks from MongoDB using Bedrock + upsert to Qdrant.
+Endpoints per API.md:
+  GET  /health   → {"status": "ok"}
+  POST /ingest   → chunk + embed + store PDFs; returns chunk counts per doc
+  POST /query    → retrieve → generate → verify → respond (answered or refused)
 """
 from __future__ import annotations
 
-import io
 import os
-import shutil
 import tempfile
-import traceback
-import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from app.ingest.chunker import chunk_document
-from app.ingest.store import add_chunks_without_embedding, embed_and_upsert_session
-from app.query.bm25_retriever import invalidate_index
-from app.shared.config import AWS_REGION, S3_BUCKET_NAME, get_s3_client
+from app.shared.schemas import IngestDocumentResult, IngestResponse, QueryRequest
+from app.query.planner import answer_question
 
-app = FastAPI(title="Cited-or-Silent API", version="2.0.0")
+app = FastAPI(title="Cited-or-Silent API", version="1.0.0")
 
-# Allow Vite dev server & production frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-    ],
-    allow_origin_regex=r"^https?://.*",
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+_ALLOWED_SUFFIXES = {".pdf"}
 
 
-# ── Startup: Ensure S3 bucket exists ─────────────────────────────────────────
-
-@app.on_event("startup")
-async def ensure_s3_bucket() -> None:
-    """On startup, verify the S3 bucket exists. Create it if missing."""
-    try:
-        s3 = get_s3_client()
-        try:
-            s3.head_bucket(Bucket=S3_BUCKET_NAME)
-            print(f"[startup] S3 bucket '{S3_BUCKET_NAME}' exists [OK]")
-        except Exception:
-            print(f"[startup] S3 bucket '{S3_BUCKET_NAME}' not found - creating...")
-            try:
-                if AWS_REGION == "us-east-1":
-                    s3.create_bucket(Bucket=S3_BUCKET_NAME)
-                else:
-                    s3.create_bucket(
-                        Bucket=S3_BUCKET_NAME,
-                        CreateBucketConfiguration={"LocationConstraint": AWS_REGION},
-                    )
-                print(f"[startup] S3 bucket '{S3_BUCKET_NAME}' created [OK]")
-            except Exception as create_exc:
-                if "BucketAlreadyOwnedByYou" in str(create_exc):
-                    print(f"[startup] S3 bucket '{S3_BUCKET_NAME}' already owned [OK]")
-                else:
-                    raise create_exc
-    except Exception as exc:
-        print(f"[startup] WARNING: Could not verify/create S3 bucket: {exc}")
-
-    # Ensure Qdrant collection + session_id payload index exist on startup
-    try:
-        from app.ingest.store import _init_qdrant_collection
-        _init_qdrant_collection()
-        print("[startup] Qdrant collection initialized [OK]")
-    except Exception as exc:
-        print(f"[startup] WARNING: Could not initialize Qdrant collection: {exc}")
-
-
-# ── /health ──────────────────────────────────────────────────────────────────
+# ── GET /health ───────────────────────────────────────────────────────────────
 
 @app.get("/health")
-def health():
+def health() -> dict:
+    """Liveness probe. Phase 0 exit criterion — must never regress."""
     return {"status": "ok"}
 
 
-# ── Models ────────────────────────────────────────────────────────────────────
-
-class IngestDocumentResult(BaseModel):
-    filename: str
-    chunks_created: int
-    pages: int
-    s3_key: str
-
-
-class IngestResponse(BaseModel):
-    status: str = "uploaded"
-    session_id: str
-    documents: List[IngestDocumentResult]
-
-
-class AnalyzeRequest(BaseModel):
-    session_id: str
-
-
-class AnalyzeResponse(BaseModel):
-    status: str = "analyzed"
-    session_id: str
-    total_embedded: int
-
-
-ALLOWED_SUFFIXES = {".pdf"}
-
-
-# ── /ingest ──────────────────────────────────────────────────────────────────
-
-def _upload_to_s3(file_bytes: bytes, s3_key: str) -> None:
-    """Upload raw bytes to S3. Called in a thread pool for parallelism."""
-    s3 = get_s3_client()
-    s3.upload_fileobj(
-        io.BytesIO(file_bytes),
-        S3_BUCKET_NAME,
-        s3_key,
-        ExtraArgs={"ContentType": "application/pdf"},
-    )
-    print(f"[s3] Uploaded: s3://{S3_BUCKET_NAME}/{s3_key} [OK]")
-
+# ── POST /ingest ──────────────────────────────────────────────────────────────
 
 @app.post("/ingest", response_model=IngestResponse)
 async def ingest(
@@ -149,40 +49,46 @@ async def ingest(
     session_id: Optional[str] = Form(None),
 ):
     """
-    Phase 1: Upload PDF(s) to S3 in parallel and chunk to MongoDB.
-    Does NOT run Bedrock embeddings — call /analyze next.
-    Returns session_id immediately.
+    Upload one or more PDFs, chunk them, embed, and store.
+
+    API.md errors:
+      400 — unsupported file type
+      422 — file present but unparseable (corrupt PDF or no extractable text)
+
+    Response shape per API.md:
+      {"status": "ingested", "documents": [{"filename", "chunks_created", "pages"}]}
     """
-    active_session_id = session_id or f"session_{uuid.uuid4().hex[:12]}"
+    from app.ingest.chunker import chunk_document
+    from app.ingest.store import add_chunks
+    from app.query.bm25_retriever import invalidate_index
+    import time
+
+    # Always ensure we have a real session_id so chunks and response are consistent
+    if not session_id:
+        session_id = f"session_{int(time.time() * 1000)}"
+
     results: List[IngestDocumentResult] = []
 
-    # Read all file bytes up-front (async read)
-    file_payloads = []
     for upload in files:
         filename = upload.filename or "unknown"
         suffix = Path(filename).suffix.lower()
-        if suffix not in ALLOWED_SUFFIXES:
+
+        # API.md: 400 for unsupported file type
+        if suffix not in _ALLOWED_SUFFIXES:
             raise HTTPException(
                 status_code=400,
                 detail=f"Unsupported file type '{suffix}'. Only PDF files are accepted.",
             )
+
         raw_bytes = await upload.read()
-        file_payloads.append((filename, raw_bytes))
 
-    # Process each file: S3 upload (parallel) + chunk (synchronous, fast)
-    futures_map = {}
-    with ThreadPoolExecutor(max_workers=min(len(file_payloads), 4)) as executor:
-        for filename, raw_bytes in file_payloads:
-            s3_key = f"{active_session_id}/{filename}"
-            future = executor.submit(_upload_to_s3, raw_bytes, s3_key)
-            futures_map[future] = (filename, raw_bytes, s3_key)
+        # Write to a temp file for PyMuPDF (needs a file path)
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp.write(raw_bytes)
+            tmp_path = tmp.name
 
-        # While S3 uploads run in parallel, chunk each file synchronously
-        for filename, raw_bytes, s3_key in futures_map.values():
-            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-                tmp.write(raw_bytes)
-                tmp_path = tmp.name
-
+        try:
+            # API.md: 422 if file is present but unparseable
             try:
                 chunks = chunk_document(tmp_path)
             except (ValueError, FileNotFoundError) as exc:
@@ -192,14 +98,14 @@ async def ingest(
                     status_code=422,
                     detail=f"Failed to process '{filename}': {exc}",
                 )
-            finally:
-                os.unlink(tmp_path)
 
+            # Tag chunks with original filename
             for c in chunks:
                 c["source_file"] = filename
 
-            # Store chunks to MongoDB WITHOUT embedding (embedding happens in /analyze)
-            add_chunks_without_embedding(chunks, session_id=active_session_id)
+            # Embed + store
+            add_chunks(chunks, session_id=session_id)
+            # Invalidate BM25 index so next query rebuilds from updated store
             invalidate_index()
 
             pages = max((c["page_number"] for c in chunks), default=0)
@@ -208,62 +114,71 @@ async def ingest(
                     filename=filename,
                     chunks_created=len(chunks),
                     pages=pages,
-                    s3_key=s3_key,
                 )
             )
 
-        # Wait for all S3 uploads to complete
-        for future in as_completed(futures_map):
+        finally:
+            # Clean up temp file
             try:
-                future.result()
-            except Exception as exc:
-                print(f"[s3] Upload warning: {exc}")
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
-    return IngestResponse(session_id=active_session_id, documents=results)
-
-
-# ── /analyze ──────────────────────────────────────────────────────────────────
-
-@app.post("/analyze", response_model=AnalyzeResponse)
-def analyze(body: AnalyzeRequest):
-    """
-    Phase 2: Read un-embedded chunks from MongoDB for a session, run Bedrock
-    Titan embeddings (1.4s sleep per chunk), and upsert to Qdrant.
-    This is a long-running operation; frontend should show a progress spinner.
-    """
-    if not body.session_id:
-        raise HTTPException(status_code=400, detail="session_id is required.")
-    try:
-        total = embed_and_upsert_session(body.session_id)
-        return AnalyzeResponse(session_id=body.session_id, total_embedded=total)
-    except Exception as exc:
-        traceback.print_exc()
-        raise HTTPException(
-            status_code=500,
-            detail=f"Embedding failed for session '{body.session_id}': {exc}",
-        )
+    return IngestResponse(documents=results, session_id=session_id)
 
 
-# ── /query ────────────────────────────────────────────────────────────────────
+# ── POST /analyze ─────────────────────────────────────────────────────────────
 
-class QueryRequest(BaseModel):
+class AnalyzePayload(BaseModel):
+    session_id: Optional[str] = None
+
+
+@app.post("/analyze")
+def analyze(payload: Optional[AnalyzePayload] = None) -> dict[str, str]:
+    """Compatibility endpoint for session analysis."""
+    return {"status": "analyzed"}
+
+
+# ── POST /query ───────────────────────────────────────────────────────────────
+
+class QueryPayload(BaseModel):
     question: str
     session_id: Optional[str] = None
 
 
 @app.post("/query")
-def query(body: QueryRequest):
-    if not body.question.strip():
-        raise HTTPException(status_code=400, detail="Question must not be empty.")
+def query(payload: QueryPayload) -> dict[str, Any]:
+    """
+    POST /query endpoint per API.md.
 
-    from app.query.planner import answer_question
+    Returns:
+      Answered case:
+        {
+          "status": "answered",
+          "answer": str,
+          "citations": [
+            {"page": int, "section": str, "quote": str, "chunk_id": str}
+          ]
+        }
+      Refused case:
+        {
+          "status": "refused",
+          "reason": "no_grounded_answer",
+          "message": "I don't have enough information in the provided documents to answer that."
+        }
+
+    Errors:
+      400 — empty question
+      503 — provider error
+    """
+    if not payload.question or not payload.question.strip():
+        raise HTTPException(status_code=400, detail="Empty question")
 
     try:
-        result = answer_question(body.question, session_id=body.session_id)
+        result = answer_question(payload.question, session_id=payload.session_id)
         return result
     except Exception as exc:
-        traceback.print_exc()
         raise HTTPException(
-            status_code=500,
-            detail=f"An error occurred while processing the query: {exc}",
+            status_code=503,
+            detail=f"Query service unavailable: {exc}",
         )

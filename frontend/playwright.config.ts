@@ -2,6 +2,11 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests/e2e',
+  // Generous global timeout for Bedrock Titan indexing
+  timeout: 300_000,
+  expect: {
+    timeout: 60_000,
+  },
   // Run sequentially — parallel would trigger Bedrock rate limits
   fullyParallel: false,
   workers: 1,

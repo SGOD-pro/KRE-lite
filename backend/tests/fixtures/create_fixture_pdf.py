@@ -4,7 +4,7 @@ create_fixture_pdf.py — generates a small test PDF for CI reproducibility.
 Run once: python create_fixture_pdf.py
 Requires: pip install pymupdf
 """
-import fitz  # PyMuPDF
+import pymupdf as fitz
 from pathlib import Path
 
 OUTPUT = Path(__file__).parent / "sample_doc.pdf"
@@ -71,23 +71,21 @@ def create_pdf():
         body = page_content["body"]
 
         # Heading (bold, 16pt)
-        page.insert_text(
-            (50, 80),
+        page.insert_textbox(
+            fitz.Rect(50, 50, 545, 100),
             heading,
             fontsize=16,
             fontname="helv",
             color=(0, 0, 0),
         )
-        # Body (12pt)
-        tw = fitz.TextWriter(page.rect)
-        font = fitz.Font("helv")
-        tw.append(
-            (50, 130),
+        # Body (12pt wrapped textbox)
+        page.insert_textbox(
+            fitz.Rect(50, 110, 545, 750),
             body,
-            font=font,
             fontsize=12,
+            fontname="helv",
+            color=(0, 0, 0),
         )
-        tw.write_text(page)
 
     doc.save(str(OUTPUT))
     print(f"Created: {OUTPUT} ({len(PAGES)} pages)")

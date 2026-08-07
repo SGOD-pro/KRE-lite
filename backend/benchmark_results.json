@@ -1,0 +1,27 @@
+{
+  "benchmark_summary": {
+    "total_queries_evaluated": 13,
+    "grounded_accuracy_pct": 80.0,
+    "adversarial_guardrail_refusal_pct": 100.0,
+    "citation_faithfulness_pct": 100.0,
+    "hallucination_rate_pct": 0.0,
+    "system_error_rate_pct": 0.0,
+    "average_latency_ms": 5077.3,
+    "p95_latency_ms": 10958.3
+  },
+  "breakdown": {
+    "grounded_queries": {
+      "total": 5,
+      "answered_with_citations": 4
+    },
+    "adversarial_guardrails": {
+      "total": 8,
+      "clean_refusals": 8,
+      "hallucinated_answers": 0
+    },
+    "citations": {
+      "total_extracted": 4,
+      "verified_faithful": 4
+    }
+  }
+}

@@ -1,33 +1,35 @@
-version: '3.8'
+version: '3.9'
 
 services:
   api:
-    build: 
+    build:
       context: ./backend
+      dockerfile: Dockerfile
+    container_name: cited_or_silent_backend
     ports:
       - "8000:8000"
-    volumes:
-      - ./backend/app:/app
     environment:
       - PYTHONUNBUFFERED=1
-      - ENV=local
-      - RDS_HOST=postgres
-      - REDIS_HOST=redis
-      - FLOCI_ENDPOINT=http://host.docker.internal:4566
+      - ENV=production
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-ap-south-1}
+      - QDRANT_ENDPOINT=${QDRANT_ENDPOINT}
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
+      - MONGODB_URI=${MONGODB_URI}
+      - MONGODB_DB_NAME=${MONGODB_DB_NAME:-hackathon_db}
+      - BEDROCK_TITAN_MODEL_ID=${BEDROCK_TITAN_MODEL_ID:-amazon.titan-embed-text-v2:0}
+      - BEDROCK_NOVA_MODEL_ID=${BEDROCK_NOVA_MODEL_ID:-apac.amazon.nova-pro-v1:0}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cited_or_silent_frontend
+    ports:
+      - "3000:80"
     depends_on:
-      - postgres
-      - redis
-
-  postgres:
-    image: pgvector/pgvector:pg16
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=changeme
-      - POSTGRES_DB=cited_or_silent
-    ports:
-      - "5432:5432"
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
+      - api
+    restart: unless-stopped
