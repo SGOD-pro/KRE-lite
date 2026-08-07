@@ -46,7 +46,7 @@ Resources:
   FastApiFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: .
+      CodeUri: app
       Handler: handler.handler
       Runtime: python3.13
       Architectures:

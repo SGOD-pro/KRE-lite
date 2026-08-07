@@ -163,12 +163,41 @@ def verify_citations(
     if not raw_citations:
         return _refusal()
 
-    # Rule 6 guard: If answer refutes/denies an entity from question that doesn't exist in chunks, refuse
+    # Rule 6 guard: Refusal triggers for adversarial / false-premise questions
     if question:
-        all_chunks_text = " ".join(c.get("text", "") for c in retrieved_chunks.values()).lower()
-        q_words = set(re.findall(r"\b\w+\b", question.lower())) - STOPWORDS
+        q_lower = question.lower().strip()
+        all_chunks_text = " ".join(
+            f"{c.get('section', '')} {c.get('text', '')}"
+            for c in retrieved_chunks.values()
+        ).lower()
+
+        # 1. Number verification: if the question specifies digits/amounts that do NOT exist
+        # anywhere in the retrieved chunks, refuse (prevent wrong entity swap / hallucination)
+        q_digits = re.findall(r"\b\d+\b", q_lower)
+        for d in q_digits:
+            if d not in all_chunks_text:
+                if any(q_lower.startswith(prefix) for prefix in [
+                    "is it true", "does the", "do ", "is ", "are ", "why does", "why do",
+                    "under what", "given that", "since ", "can ", "how many", "what is"
+                ]):
+                    return _refusal()
+
+        # 2. Leading questions with false premises ("Given that...", "Since...")
+        if q_lower.startswith("given that") or q_lower.startswith("since"):
+            premise_clause = q_lower.split(",")[0] if "," in q_lower else q_lower
+            premise_words = [
+                w for w in re.findall(r"\b[a-z]{3,}\b", premise_clause)
+                if w not in STOPWORDS
+            ]
+            missing_premise_words = [w for w in premise_words if w not in all_chunks_text]
+            if len(missing_premise_words) >= 2:
+                return _refusal()
+
+        # 3. Refutation guard: If answer explicitly denies/negates an entity from the question
+        # that doesn't exist in chunks, refuse instead of correcting
+        q_words = set(re.findall(r"\b\w+\b", q_lower)) - STOPWORDS
         neg_matches = re.findall(
-            r"\b(?:not|never|no|neither|none|without|instead of)\s+([a-zA-Z0-9]+)",
+            r"\b(?:not|never|no|neither|none|without|instead of|cannot|can't)\s+([a-zA-Z0-9]+)",
             answer_draft.lower(),
         )
         for w in neg_matches:

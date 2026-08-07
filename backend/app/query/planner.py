@@ -46,24 +46,18 @@ def answer_question(question: str, session_id: str | None = None) -> dict[str, A
     print(f"[QUERY] Question: {clean_question!r}")
     
     # ── 1. Retrieval (Hybrid Vector + BM25) ──────────────────────────────────
-    # Always search globally so partial/mismatched sessions never miss an answer.
-    # If a session_id is provided, also search session-specifically and merge results.
-    # Session chunks get naturally boosted by RRF (they appear in both lists).
-    vector_global  = vector_search(clean_question, top_k=20, session_id=None)
-    bm25_global    = bm25_search(clean_question,   top_k=20, session_id=None)
-    
-    all_result_lists = [bm25_global, vector_global]
-    
+    # If a session_id is provided, search strictly within the session.
+    # If session_id is None, search globally across all collections.
     if session_id:
-        vector_session = vector_search(clean_question, top_k=10, session_id=session_id)
-        bm25_session   = bm25_search(clean_question,   top_k=10, session_id=session_id)
-        if vector_session:
-            all_result_lists.append(vector_session)
-        if bm25_session:
-            all_result_lists.append(bm25_session)
+        vector_session = vector_search(clean_question, top_k=15, session_id=session_id)
+        bm25_session   = bm25_search(clean_question,   top_k=15, session_id=session_id)
+        all_result_lists = [bm25_session, vector_session]
         print(f"[QUERY] Session '{session_id}': vector={len(vector_session)}, bm25={len(bm25_session)}")
-    
-    print(f"[QUERY] Global: vector={len(vector_global)}, bm25={len(bm25_global)}")
+    else:
+        vector_global  = vector_search(clean_question, top_k=20, session_id=None)
+        bm25_global    = bm25_search(clean_question,   top_k=20, session_id=None)
+        all_result_lists = [bm25_global, vector_global]
+        print(f"[QUERY] Global: vector={len(vector_global)}, bm25={len(bm25_global)}")
 
     # ── 2. Fusion ───────────────────────────────────────────────────────────
     fused_chunks_list = reciprocal_rank_fusion(all_result_lists, top_k=15)
