@@ -4,10 +4,9 @@ version = 0.1
 stack_name = "kre-lite"
 resolve_s3 = true
 s3_prefix = "kre-lite"
-confirm_changeset = true
+confirm_changeset = false
 capabilities = "CAPABILITY_IAM"
 image_repositories = []
-profile = "aws"
 parameter_overrides = "TitanEmbedModelId=\"amazon.titan-embed-text-v2:0\" NovaLlmModelId=\"amazon.nova-pro-v1:0\" S3BucketName=\"cited-or-silent-docs\" MongoDbName=\"cited_or_silent\""
 
 [default.global.parameters]
