@@ -1,262 +1,164 @@
 """
-store.py — MongoDB Atlas + Qdrant Cloud vector store integration.
+store.py — Chroma embedded vector store + in-process chunk store.
 
-Architecture:
-- MongoDB Atlas: Primary database for chunk text, metadata, and BM25 (Atlas Search).
-- Qdrant Cloud: Vector database storing ONLY embeddings + minimal metadata.
+ARCHITECTURE.md: "Local Chroma or SQLite+sqlite-vec for the demo."
+Decision: Chroma in embedded mode (no Docker service, no network hop).
 
-Two-Phase Ingestion:
-  Phase 1 — add_chunks_without_embedding(): store chunks in MongoDB only (fast).
-  Phase 2 — embed_and_upsert_session():     embed from MongoDB + upsert to Qdrant (slow, rate-limited).
+Chunk storage model:
+- Chroma collection: stores embeddings + metadata (page, section, chunk_id, source_file)
+- In-memory dict (backed by Chroma metadata): stores full chunk text
+  for BM25 and retrieval. Chroma documents field holds the text.
 
-DECISION.md Rule 7: Every chunk MUST have non-null page_number and section_title.
+All data is persisted to CHROMA_PERSIST_DIR on disk so ingestion
+survives app restarts during the demo.
+
+DECISION.md Rule 7: Every chunk has non-null page_number and section_title.
 """
 from __future__ import annotations
 
-import uuid
+import os
+from pathlib import Path
 from typing import Any, List
 
-from qdrant_client.http.models import Distance, PointStruct, VectorParams
-
-from app.ingest.embed_service import embed_texts
-from app.shared.config import get_mongo_client, get_qdrant_client, MONGODB_DB
-
+# Chroma persist path — configurable via env var, defaults to ./chroma_db/
+CHROMA_PERSIST_DIR = os.getenv("CHROMA_PATH", str(Path(__file__).parent.parent.parent / "chroma_db"))
 COLLECTION_NAME = "document_chunks"
 
 
-def _init_qdrant_collection() -> None:
-    """Ensure Qdrant collection and payload indexes exist."""
-    qdrant = get_qdrant_client()
-    if not qdrant.collection_exists(COLLECTION_NAME):
-        qdrant.create_collection(
-            collection_name=COLLECTION_NAME,
-            vectors_config=VectorParams(size=1024, distance=Distance.COSINE),
-        )
-    try:
-        from qdrant_client.http import models
-        qdrant.create_payload_index(
-            collection_name=COLLECTION_NAME,
-            field_name="session_id",
-            field_schema=models.PayloadSchemaType.KEYWORD,
-        )
-    except Exception:
-        pass
+def _get_client():
+    """Return a persistent Chroma client (lazy, cached per-process via module-level singleton)."""
+    import chromadb
+    return chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
 
 
-def _get_qdrant_id(chunk_id: str) -> str:
-    """Hash string chunk_id into a stable UUID for Qdrant."""
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, chunk_id))
-
-
-def add_chunks_without_embedding(chunks: List[dict[str, Any]], session_id: str | None = None) -> None:
-    """
-    Phase 1: Store chunks in MongoDB ONLY — no embeddings.
-    Sets 'embedded': False so Phase 2 knows which chunks to process.
-    """
-    if not chunks:
-        return
-
-    mongo = get_mongo_client()
-    db = mongo[MONGODB_DB]
-    mongo_collection = db["chunks"]
-
-    mongo_docs = []
-    for chunk in chunks:
-        doc = {
-            "_id": chunk["chunk_id"],
-            "chunk_id": chunk["chunk_id"],
-            "source_file": chunk["source_file"],
-            "page_number": chunk["page_number"],
-            "section_title": chunk["section_title"],
-            "text": chunk["text"],
-            "embedded": False,  # Phase 2 will flip this to True
-        }
-        if session_id:
-            doc["session_id"] = session_id
-        mongo_docs.append(doc)
-
-    from pymongo import ReplaceOne
-    operations = [
-        ReplaceOne({"_id": doc["_id"]}, doc, upsert=True)
-        for doc in mongo_docs
-    ]
-    if operations:
-        mongo_collection.bulk_write(operations)
-
-    print(f"[store] Saved {len(mongo_docs)} chunks to MongoDB (not yet embedded)")
-
-
-def embed_and_upsert_session(session_id: str) -> int:
-    """
-    Phase 2: Fetch all un-embedded chunks for a session from MongoDB,
-    embed with Bedrock (1.4s sleep per chunk), and upsert to Qdrant.
-    Returns the number of chunks embedded.
-    """
-    mongo = get_mongo_client()
-    db = mongo[MONGODB_DB]
-    mongo_collection = db["chunks"]
-
-    # Fetch only un-embedded chunks for this session
-    cursor = mongo_collection.find({
-        "session_id": session_id,
-        "embedded": {"$ne": True},
-    })
-    chunks = list(cursor)
-
-    if not chunks:
-        print(f"[store] No un-embedded chunks found for session '{session_id}'")
-        return 0
-
-    print(f"[store] Embedding {len(chunks)} chunks for session '{session_id}' (1.4s/chunk)...")
-    texts = [c["text"] for c in chunks]
-    embeddings = embed_texts(texts)
-
-    qdrant = get_qdrant_client()
-    points = []
-
-    for chunk, embedding in zip(chunks, embeddings):
-        qdrant_id = _get_qdrant_id(chunk["chunk_id"])
-        payload = {
-            "chunk_id": chunk["chunk_id"],
-            "source_file": chunk["source_file"],
-            "page_number": chunk["page_number"],
-            "section_title": chunk["section_title"],
-            "session_id": session_id,
-        }
-        points.append(PointStruct(id=qdrant_id, vector=embedding, payload=payload))
-
-    # Upsert to Qdrant in batches of 50
-    batch_size = 50
-    for i in range(0, len(points), batch_size):
-        qdrant.upsert(
-            collection_name=COLLECTION_NAME,
-            points=points[i:i + batch_size],
-        )
-
-    # Mark chunks as embedded in MongoDB
-    chunk_ids = [c["chunk_id"] for c in chunks]
-    mongo_collection.update_many(
-        {"chunk_id": {"$in": chunk_ids}},
-        {"$set": {"embedded": True}},
+def _get_collection():
+    """Return (or create) the Chroma collection for document chunks."""
+    client = _get_client()
+    return client.get_or_create_collection(
+        name=COLLECTION_NAME,
+        metadata={"hnsw:space": "cosine"},
     )
-
-    print(f"[store] Embedded and upserted {len(points)} vectors to Qdrant [OK]")
-    return len(points)
 
 
 def add_chunks(chunks: List[dict[str, Any]], session_id: str | None = None) -> None:
     """
-    Legacy: embed-and-store in one shot (used by legacy tests).
-    Prefer add_chunks_without_embedding + embed_and_upsert_session.
+    Embed and store chunks in Chroma.
+
+    Each chunk must have: chunk_id, text, page_number, section_title, source_file.
+    DECISION.md Rule 7: enforced — chunk_id without page_number or section_title is rejected.
+
+    Args:
+        chunks: list of chunk dicts from chunker.py
+        session_id: optional tag for filtering during retrieval
     """
     if not chunks:
         return
 
-    _init_qdrant_collection()
+    # Validate Rule 7 before doing any embedding work
+    for c in chunks:
+        if not c.get("page_number"):
+            raise ValueError(f"DECISION.md Rule 7 violation: chunk missing page_number: {c.get('chunk_id')}")
+        if not c.get("section_title"):
+            raise ValueError(f"DECISION.md Rule 7 violation: chunk missing section_title: {c.get('chunk_id')}")
+
+    from app.ingest.embed_service import embed_texts
 
     texts = [c["text"] for c in chunks]
+    print(f"[store] Embedding {len(chunks)} chunks via BGE-small (local)...")
     embeddings = embed_texts(texts)
+    print(f"[store] Embedding done.")
 
-    mongo = get_mongo_client()
-    db = mongo[MONGODB_DB]
-    mongo_collection = db["chunks"]
+    collection = _get_collection()
 
-    qdrant = get_qdrant_client()
-    points = []
-    mongo_docs = []
-
-    for chunk, embedding in zip(chunks, embeddings):
-        qdrant_id = _get_qdrant_id(chunk["chunk_id"])
-
-        payload = {
-            "chunk_id": chunk["chunk_id"],
-            "source_file": chunk["source_file"],
-            "page_number": chunk["page_number"],
-            "section_title": chunk["section_title"],
+    ids = [c["chunk_id"] for c in chunks]
+    metadatas = [
+        {
+            "page_number": c["page_number"],
+            "section_title": c["section_title"],
+            "source_file": c["source_file"],
+            "session_id": session_id or "",
         }
-        if session_id:
-            payload["session_id"] = session_id
+        for c in chunks
+    ]
 
-        points.append(PointStruct(id=qdrant_id, vector=embedding, payload=payload))
-
-        doc = {
-            "_id": chunk["chunk_id"],
-            "chunk_id": chunk["chunk_id"],
-            "source_file": chunk["source_file"],
-            "page_number": chunk["page_number"],
-            "section_title": chunk["section_title"],
-            "text": chunk["text"],
-            "embedded": True,
-        }
-        if session_id:
-            doc["session_id"] = session_id
-        mongo_docs.append(doc)
-
-    batch_size = 50
-    for i in range(0, len(points), batch_size):
-        qdrant.upsert(
-            collection_name=COLLECTION_NAME,
-            points=points[i:i + batch_size],
+    # Upsert in batches to avoid memory spikes on large docs
+    batch_size = 100
+    for i in range(0, len(chunks), batch_size):
+        collection.upsert(
+            ids=ids[i:i + batch_size],
+            embeddings=embeddings[i:i + batch_size],
+            documents=texts[i:i + batch_size],
+            metadatas=metadatas[i:i + batch_size],
         )
 
-    from pymongo import ReplaceOne
-    operations = [ReplaceOne({"_id": doc["_id"]}, doc, upsert=True) for doc in mongo_docs]
-    if operations:
-        mongo_collection.bulk_write(operations)
+    print(f"[store] Upserted {len(chunks)} chunks to Chroma [OK]")
 
 
-def get_all_chunks() -> List[dict[str, Any]]:
-    """Return all stored chunks (used by legacy tests or BM25 fallback)."""
-    mongo = get_mongo_client()
-    db = mongo[MONGODB_DB]
-    cursor = db["chunks"].find({})
+def get_all_chunks(session_id: str | None = None) -> List[dict[str, Any]]:
+    """
+    Return all stored chunks (used by BM25 retriever to build its index).
+    Optionally filter by session_id.
+    """
+    collection = _get_collection()
 
-    return [
-        {
-            "chunk_id": doc["chunk_id"],
-            "source_file": doc["source_file"],
-            "page_number": doc["page_number"],
-            "section_title": doc["section_title"],
-            "text": doc["text"],
-        }
-        for doc in cursor
-    ]
+    where = {"session_id": session_id} if session_id else None
+
+    try:
+        result = collection.get(
+            include=["documents", "metadatas"],
+            where=where,
+        )
+    except Exception:
+        # Collection might be empty on first call before any ingestion
+        result = {"ids": [], "documents": [], "metadatas": []}
+
+    chunks = []
+    for chunk_id, text, meta in zip(
+        result.get("ids", []),
+        result.get("documents", []),
+        result.get("metadatas", []),
+    ):
+        chunks.append({
+            "chunk_id": chunk_id,
+            "text": text,
+            "page_number": meta.get("page_number"),
+            "section_title": meta.get("section_title"),
+            "source_file": meta.get("source_file"),
+            "session_id": meta.get("session_id") or None,
+        })
+    return chunks
 
 
 def get_chunks_by_ids(ids: List[str]) -> List[dict[str, Any]]:
-    """Fetch specific chunks by their chunk_id list from MongoDB."""
+    """Fetch specific chunks by their chunk_id list."""
     if not ids:
         return []
-    mongo = get_mongo_client()
-    db = mongo[MONGODB_DB]
-
-    cursor = db["chunks"].find({"_id": {"$in": ids}})
-
-    doc_map = {
-        doc["_id"]: {
-            "chunk_id": doc["chunk_id"],
-            "source_file": doc["source_file"],
-            "page_number": doc["page_number"],
-            "section_title": doc["section_title"],
-            "text": doc["text"],
-        }
-        for doc in cursor
-    }
-
-    result = []
-    for chunk_id in ids:
-        if chunk_id in doc_map:
-            result.append(doc_map[chunk_id])
-
-    return result
+    collection = _get_collection()
+    result = collection.get(
+        ids=ids,
+        include=["documents", "metadatas"],
+    )
+    chunks = []
+    for chunk_id, text, meta in zip(
+        result.get("ids", []),
+        result.get("documents", []),
+        result.get("metadatas", []),
+    ):
+        chunks.append({
+            "chunk_id": chunk_id,
+            "text": text,
+            "page_number": meta.get("page_number"),
+            "section_title": meta.get("section_title"),
+            "source_file": meta.get("source_file"),
+        })
+    return chunks
 
 
 def reset_collection() -> None:
-    """Drop the collections — used in tests only."""
-    qdrant = get_qdrant_client()
-    if qdrant.collection_exists(COLLECTION_NAME):
-        qdrant.delete_collection(COLLECTION_NAME)
-
-    mongo = get_mongo_client()
-    db = mongo[MONGODB_DB]
-    db["chunks"].drop()
+    """Delete all chunks — used in tests only. Wipes the Chroma collection."""
+    client = _get_client()
+    try:
+        client.delete_collection(COLLECTION_NAME)
+        print("[store] Collection reset [OK]")
+    except Exception:
+        pass  # Collection didn't exist yet — that's fine

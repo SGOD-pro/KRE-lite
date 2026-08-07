@@ -1,19 +1,17 @@
 """
-vector_retriever.py — semantic search via Qdrant Cloud.
+vector_retriever.py — semantic search via Chroma (embedded mode).
 
-Retrieves top chunks from Qdrant by cosine similarity, then fetches the raw text
-and metadata from MongoDB Atlas.
+ARCHITECTURE.md retrieval flow:
+  BM25 top-k candidates -> BGE-small embed -> vector similarity re-rank
+  -> [optional] NVIDIA Build rerank -> LLM -> citation_verifier
+
+This module handles the vector similarity step against the Chroma
+collection created by store.py. It runs entirely in-process — no
+external service call.
 """
 from __future__ import annotations
 
 from typing import Any, List
-
-from app.ingest.embed_service import embed_query
-from app.ingest.store import get_chunks_by_ids, COLLECTION_NAME
-from app.shared.config import get_qdrant_client
-
-
-from qdrant_client.http.models import FieldCondition, Filter, MatchValue
 
 
 def vector_search(
@@ -22,50 +20,56 @@ def vector_search(
     session_id: str | None = None,
 ) -> List[dict[str, Any]]:
     """
-    Search Qdrant for semantic similarity to `query`.
-    Returns list of chunks (with text from Mongo), annotated with `vector_score`.
+    Search for the top_k most semantically similar chunks to `query`.
+
+    Returns a list of chunk dicts annotated with `vector_score`
+    (cosine similarity, 0-1, higher is better).
+
+    Args:
+        query: the user's question
+        top_k: max results to return
+        session_id: if provided, filter to only chunks from this session
     """
     if not query.strip():
         return []
 
-    query_vec = embed_query(query)
+    from app.ingest.embed_service import embed_query
+    from app.ingest.store import _get_collection
 
-    qdrant = get_qdrant_client()
-    query_filter = None
-    if session_id:
-        query_filter = Filter(
-            must=[FieldCondition(key="session_id", match=MatchValue(value=session_id))]
-        )
+    query_vec = embed_query(query)
+    collection = _get_collection()
+
+    # Build where filter for session scoping
+    where = {"session_id": session_id} if session_id else None
 
     try:
-        search_result = qdrant.query_points(
-            collection_name=COLLECTION_NAME,
-            query=query_vec,
-            query_filter=query_filter,
-            limit=top_k,
-        ).points
-    except Exception as e:
-        print(f"Qdrant search error: {e}")
+        result = collection.query(
+            query_embeddings=[query_vec],
+            n_results=top_k,
+            include=["documents", "metadatas", "distances"],
+            where=where,
+        )
+    except Exception as exc:
+        print(f"[vector] Chroma query error: {exc}")
         return []
 
-    if not search_result:
-        return []
+    ids = result.get("ids", [[]])[0]
+    documents = result.get("documents", [[]])[0]
+    metadatas = result.get("metadatas", [[]])[0]
+    distances = result.get("distances", [[]])[0]
 
-    # search_result contains ScoredPoint objects with .id, .score, .payload
-    chunk_ids = [hit.payload["chunk_id"] for hit in search_result if "chunk_id" in hit.payload]
-    
-    # Fetch from Mongo
-    mongo_chunks = get_chunks_by_ids(chunk_ids)
-    
-    # Map by chunk_id to reconstruct order and attach scores
-    mongo_map = {c["chunk_id"]: c for c in mongo_chunks}
-    
-    scored_chunks = []
-    for hit in search_result:
-        c_id = hit.payload.get("chunk_id")
-        if c_id and c_id in mongo_map:
-            chunk = mongo_map[c_id].copy()
-            chunk["vector_score"] = hit.score
-            scored_chunks.append(chunk)
+    chunks = []
+    for chunk_id, text, meta, dist in zip(ids, documents, metadatas, distances):
+        # Chroma returns cosine distance (0 = identical, 2 = opposite).
+        # Convert to similarity: similarity = 1 - distance (for normalized vectors).
+        similarity = max(0.0, 1.0 - dist)
+        chunks.append({
+            "chunk_id": chunk_id,
+            "text": text,
+            "page_number": meta.get("page_number"),
+            "section_title": meta.get("section_title"),
+            "source_file": meta.get("source_file"),
+            "vector_score": similarity,
+        })
 
-    return scored_chunks
+    return chunks
