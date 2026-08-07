@@ -1,11 +1,8 @@
 """
-tests/unit/test_health.py — Phase 0 exit criterion (must never regress).
+tests/unit/test_health.py — Basic API endpoint liveness tests.
 
 Verifies GET /health returns HTTP 200 with {"status": "ok"}.
-
-Phase 1 update: /ingest is now implemented (returns 200, not 501).
-  The 501 test has been removed. /ingest is tested in test_ingestion.py.
-  /query remains a 501 stub until Phase 2.
+Verifies POST /query returns HTTP 400 for empty question.
 """
 from fastapi.testclient import TestClient
 
@@ -26,7 +23,7 @@ def test_health_returns_ok_status():
     assert response.json() == {"status": "ok"}
 
 
-def test_query_stub_returns_501():
-    """POST /query is a Phase 2 stub — must return 501 Not Implemented."""
-    response = client.post("/query")
-    assert response.status_code == 501
+def test_query_empty_question_returns_400():
+    """POST /query with empty question must return 400."""
+    response = client.post("/query", json={"question": ""})
+    assert response.status_code == 400

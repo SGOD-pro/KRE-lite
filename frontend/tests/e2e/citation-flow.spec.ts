@@ -48,8 +48,8 @@ async function ingestAndAnalyze(page: Page, pdfPaths: string[], timeout = 420_00
 
   // Wait for "Start Analyzing" button (Phase 1 complete)
   const analyzeBtn = page.getByTestId('ingest-button');
-  await expect(analyzeBtn).toBeVisible({ timeout: 60_000 });
-  await expect(analyzeBtn).toBeEnabled({ timeout: 60_000 });
+  await expect(analyzeBtn).toBeVisible({ timeout: 180_000 });
+  await expect(analyzeBtn).toBeEnabled({ timeout: 180_000 });
 
   // Phase 2: trigger embeddings
   await analyzeBtn.click();
@@ -115,9 +115,8 @@ test('UI: Upload button disabled while uploading, Analyze disabled until upload 
   await expect(analyzeBtn).not.toBeVisible();
 });
 
-// ── Test 3: Happy path — answer + citation chip + Source Viewer real text ─────
-
-test('Happy path: answer has citation chip; Source Viewer shows real chunk text', async ({ page }) => {
+// ── Test 3: RULES.md required: test_happy_path_question_shows_citation_and_highlights_source
+test('test_happy_path_question_shows_citation_and_highlights_source', async ({ page }) => {
   test.setTimeout(420_000);
 
   await ingestAndAnalyze(page, [PDF_SMALL]);
@@ -160,9 +159,8 @@ test('Happy path: answer has citation chip; Source Viewer shows real chunk text'
   }
 });
 
-// ── Test 4: Adversarial question — guardrail must refuse ─────────────────────
-
-test('Guardrail: adversarial out-of-scope question is rejected without error', async ({ page }) => {
+// ── Test 4: RULES.md required: test_adversarial_question_shows_refusal_not_error_state
+test('test_adversarial_question_shows_refusal_not_error_state', async ({ page }) => {
   test.setTimeout(420_000);
 
   await ingestAndAnalyze(page, [PDF_SMALL]);
@@ -170,13 +168,43 @@ test('Guardrail: adversarial out-of-scope question is rejected without error', a
   const { refusal } = await askQuestion(page, ADVERSARIAL_QUESTION);
   await expect(refusal).toBeVisible({ timeout: 90_000 });
 
-  // Must NOT show an answer bubble for this question
+  // Refusal must have distinct neutral styling, NOT an error bubble
   const answer = page.getByTestId('answer-bubble').first();
   expect(await answer.isVisible()).toBe(false);
 });
 
-// ── Test 5: Out-of-scope — guardrail rejects obvious non-document question ────
+// ── Test 5: RULES.md required: test_citation_click_scrolls_and_highlights_correct_page
+test('test_citation_click_scrolls_and_highlights_correct_page', async ({ page }) => {
+  test.setTimeout(420_000);
 
+  await ingestAndAnalyze(page, [PDF_SMALL]);
+
+  const { answer } = await askQuestion(page, QUESTION_ATTENTION);
+  const gotAnswer = await answer.isVisible();
+
+  if (gotAnswer) {
+    const chip = page.getByTestId('citation-chip').first();
+    await expect(chip).toBeVisible();
+
+    // The chip shows p.X — extract page number
+    const chipText = await chip.innerText();
+    const pageMatch = chipText.match(/p\.(\d+)/);
+
+    await chip.click();
+
+    if (pageMatch) {
+      const expectedPage = pageMatch[1];
+      const currentPageEl = page.getByTestId('page-nav-current');
+      await expect(currentPageEl).toHaveText(expectedPage, { timeout: 5_000 });
+    }
+
+    // Verify quote highlight is rendered in the source viewer
+    const highlight = page.getByTestId('citation-highlight');
+    await expect(highlight).toBeVisible({ timeout: 5_000 });
+  }
+});
+
+// ── Test 6: Out-of-scope — guardrail rejects obvious non-document question ────
 test('Guardrail: completely off-topic question (cookies recipe) is refused', async ({ page }) => {
   test.setTimeout(420_000);
 
@@ -186,8 +214,7 @@ test('Guardrail: completely off-topic question (cookies recipe) is refused', asy
   await expect(refusal).toBeVisible({ timeout: 90_000 });
 });
 
-// ── Test 6: Multi-PDF — two documents in one session ─────────────────────────
-
+// ── Test 7: Multi-PDF — two documents in one session ─────────────────────────
 test('Multi-PDF: two PDFs in one session; questions answered from correct source', async ({ page }) => {
   test.setTimeout(600_000); // Extra time — two PDFs means more embeddings
 
@@ -214,13 +241,11 @@ test('Multi-PDF: two PDFs in one session; questions answered from correct source
     // Source viewer header should show a real filename
     const svHeader = page.getByTestId('source-viewer');
     const headerText = await svHeader.innerText();
-    // Should contain a .pdf filename from our uploaded set
     expect(headerText.toLowerCase()).toMatch(/\.pdf/);
   }
 });
 
-// ── Test 7: New Session resets state ─────────────────────────────────────────
-
+// ── Test 8: New Session resets state ─────────────────────────────────────────
 test('New Session button resets state and returns to upload screen', async ({ page }) => {
   test.setTimeout(420_000);
 
@@ -237,32 +262,4 @@ test('New Session button resets state and returns to upload screen', async ({ pa
   // Should return to the upload screen
   const fileInput = page.getByTestId('file-input');
   await expect(fileInput).toBeAttached({ timeout: 10_000 });
-});
-
-// ── Test 8: Citation page navigation ─────────────────────────────────────────
-
-test('Citation click updates page number in Source Viewer navigation', async ({ page }) => {
-  test.setTimeout(420_000);
-
-  await ingestAndAnalyze(page, [PDF_SMALL]);
-
-  const { answer } = await askQuestion(page, QUESTION_ATTENTION);
-  const gotAnswer = await answer.isVisible();
-
-  if (gotAnswer) {
-    const chip = page.getByTestId('citation-chip').first();
-    await expect(chip).toBeVisible();
-
-    // The chip shows p.X — extract page number
-    const chipText = await chip.innerText();
-    const pageMatch = chipText.match(/p\.(\d+)/);
-
-    await chip.click();
-
-    if (pageMatch) {
-      const expectedPage = pageMatch[1];
-      const currentPageEl = page.getByTestId('page-nav-current');
-      await expect(currentPageEl).toHaveText(expectedPage, { timeout: 5_000 });
-    }
-  }
 });

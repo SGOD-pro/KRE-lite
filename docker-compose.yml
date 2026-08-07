@@ -4,31 +4,32 @@ services:
   api:
     build:
       context: ./backend
+      dockerfile: Dockerfile
+    container_name: cited_or_silent_backend
     ports:
       - "8000:8000"
-    volumes:
-      # mount source for live reload during development
-      - ./backend:/backend
     environment:
       - PYTHONUNBUFFERED=1
-      - ENV=local
-    # Phase 1 will add:
-    #   depends_on: [chroma]  (if using ChromaDB server mode)
-    # OR no external service at all (ChromaDB in embedded/local mode — preferred)
+      - ENV=production
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-ap-south-1}
+      - QDRANT_ENDPOINT=${QDRANT_ENDPOINT}
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
+      - MONGODB_URI=${MONGODB_URI}
+      - MONGODB_DB_NAME=${MONGODB_DB_NAME:-hackathon_db}
+      - BEDROCK_TITAN_MODEL_ID=${BEDROCK_TITAN_MODEL_ID:-amazon.titan-embed-text-v2:0}
+      - BEDROCK_NOVA_MODEL_ID=${BEDROCK_NOVA_MODEL_ID:-apac.amazon.nova-pro-v1:0}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    restart: unless-stopped
 
-  # ── Phase 1+ services (uncomment when adding deps) ──────────────────────────
-  #
-  # chroma:
-  #   image: chromadb/chroma:latest
-  #   ports:
-  #     - "8001:8000"
-  #   volumes:
-  #     - chroma_data:/chroma/.chroma/index
-  #
-  # NOTE: postgres + pgvector were in an earlier draft of this compose file.
-  # BOUNDARIES.md says "Postgres+pgvector ONLY if infra time allows."
-  # The approved Phase 0-2 vector store is local Chroma or sqlite-vec.
-  # Do NOT add postgres back unless BOUNDARIES.md's condition is met.
-
-# volumes:
-#   chroma_data:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cited_or_silent_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    restart: unless-stopped

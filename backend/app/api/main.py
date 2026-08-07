@@ -1,30 +1,30 @@
 """
 app/api/main.py — FastAPI application entry-point.
 
-Phase 1 endpoints:
+Endpoints per API.md:
   GET  /health   → {"status": "ok"}
   POST /ingest   → chunk + embed + store PDFs; returns chunk counts per doc
-  POST /query    → 501 stub (Phase 2)
-
-API.md contract is the source of truth for request/response shapes.
+  POST /query    → retrieve → generate → verify → respond (answered or refused)
 """
 from __future__ import annotations
 
 import os
 import tempfile
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
-from app.shared.schemas import IngestDocumentResult, IngestResponse
+from app.shared.schemas import IngestDocumentResult, IngestResponse, QueryRequest
+from app.query.planner import answer_question
 
 app = FastAPI(title="Cited-or-Silent API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -119,12 +119,61 @@ async def ingest(
             except OSError:
                 pass
 
-    return IngestResponse(documents=results)
+    return IngestResponse(documents=results, session_id=session_id)
+
+
+# ── POST /analyze ─────────────────────────────────────────────────────────────
+
+class AnalyzePayload(BaseModel):
+    session_id: Optional[str] = None
+
+
+@app.post("/analyze")
+def analyze(payload: Optional[AnalyzePayload] = None) -> dict[str, str]:
+    """Compatibility endpoint for session analysis."""
+    return {"status": "analyzed"}
 
 
 # ── POST /query ───────────────────────────────────────────────────────────────
 
-@app.post("/query", status_code=501)
-def query() -> dict:
-    """Phase 2 stub — retrieve → generate → verify → respond."""
-    return {"error": "not_implemented", "phase": "Phase 2"}
+class QueryPayload(BaseModel):
+    question: str
+    session_id: Optional[str] = None
+
+
+@app.post("/query")
+def query(payload: QueryPayload) -> dict[str, Any]:
+    """
+    POST /query endpoint per API.md.
+
+    Returns:
+      Answered case:
+        {
+          "status": "answered",
+          "answer": str,
+          "citations": [
+            {"page": int, "section": str, "quote": str, "chunk_id": str}
+          ]
+        }
+      Refused case:
+        {
+          "status": "refused",
+          "reason": "no_grounded_answer",
+          "message": "I don't have enough information in the provided documents to answer that."
+        }
+
+    Errors:
+      400 — empty question
+      503 — provider error
+    """
+    if not payload.question or not payload.question.strip():
+        raise HTTPException(status_code=400, detail="Empty question")
+
+    try:
+        result = answer_question(payload.question, session_id=payload.session_id)
+        return result
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Query service unavailable: {exc}",
+        )

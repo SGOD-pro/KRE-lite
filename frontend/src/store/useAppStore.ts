@@ -122,9 +122,9 @@ export const useAppStore = create<AppState>()(
           }
 
           const data = await response.json();
-          // data: { status: "uploaded", session_id, documents: [...] }
+          const sid = data.session_id || sessionId || `session_${Date.now()}`;
           set({
-            sessionId: data.session_id,
+            sessionId: sid,
             documents: data.documents,
             ingestionPhase: 'ready',
             isIngesting: false,
@@ -137,15 +137,14 @@ export const useAppStore = create<AppState>()(
 
       /** Phase 2: trigger Bedrock embeddings for the session */
       analyzeSession: async () => {
-        const { sessionId } = get();
-        if (!sessionId) return;
+        const sid = get().sessionId || `session_${Date.now()}`;
 
         set({ ingestionPhase: 'analyzing', isIngesting: true });
         try {
           const response = await fetch(`${API_BASE_URL}/analyze`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session_id: sessionId }),
+            body: JSON.stringify({ session_id: sid }),
           });
 
           if (!response.ok) {
@@ -154,6 +153,7 @@ export const useAppStore = create<AppState>()(
           }
 
           set({
+            sessionId: sid,
             ingestionPhase: 'done',
             isIngesting: false,
             currentView: 'chat',

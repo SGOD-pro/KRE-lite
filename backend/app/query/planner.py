@@ -1,10 +1,16 @@
 """
 planner.py — Orchestrates the full query pipeline:
-  1. Vector Retrieval (Qdrant semantic search)
-  2. Pre-generation Guardrail  — out-of-scope check on semantic similarity
-  3. BM25 Retrieval + RRF Fusion
-  4. LLM Generation (Nova)
-  5. Post-generation Guardrail  — citation verification (rapidfuzz)
+  1. Semantic vector retrieval (Qdrant)
+  2. Keyword BM25 retrieval
+  3. Hybrid rank fusion (Reciprocal Rank Fusion)
+  4. Structured LLM Generation (NVIDIA Build / OpenRouter / Bedrock Nova)
+  5. Post-generation Citation Verification (deterministic fuzzy guardrail)
+
+Output matches API.md / POST /query contracts exactly:
+  Answered:
+    {"status": "answered", "answer": str, "citations": [{"page": int, "section": str, "quote": str, "chunk_id": str}]}
+  Refused:
+    {"status": "refused", "reason": "no_grounded_answer", "message": str}
 """
 from __future__ import annotations
 
@@ -16,60 +22,69 @@ from app.query.fusion import reciprocal_rank_fusion
 from app.query.llm_service import generate_answer
 from app.query.citation_verifier import verify_citations, REFUSAL_MESSAGE
 
-# If the highest semantic match score is below this, the query is out of scope.
-# Qdrant cosine scores range 0.0–1.0; below 0.3 is almost always unrelated.
-SEMANTIC_SIMILARITY_THRESHOLD = 0.3
-
 
 def answer_question(question: str, session_id: str | None = None) -> dict[str, Any]:
     """
-    Full RAG pipeline:
-      1. Vector search for semantic similarity + pre-guardrail check.
-      2. BM25 search + RRF fusion for top candidates.
-      3. LLM generation with strict citations.
-      4. Post-generation citation verifier to reject hallucinations.
+    Executes the end-to-end question answering pipeline:
+      1. Retrieve top vector candidates from Qdrant.
+      2. Retrieve top BM25 candidates from keyword store.
+      3. Fuse candidates using Reciprocal Rank Fusion.
+      4. If no relevant chunks exist, refuse immediately.
+      5. Generate structured answer draft with citations using LLM.
+      6. Verifies citation quotes against actual chunk text deterministically.
+      7. Returns verified answer or structured refusal.
     """
-    # ── 1. Vector Search ─────────────────────────────────────────────────────
-    vector_results = vector_search(question, top_k=20, session_id=session_id)
-
-    # ── 2. Pre-generation Guardrail ──────────────────────────────────────────
-    if not vector_results:
+    clean_question = question.strip() if question else ""
+    if not clean_question:
         return {
             "status": "refused",
-            "answer": REFUSAL_MESSAGE,
-            "citations": [],
+            "reason": "no_grounded_answer",
+            "message": REFUSAL_MESSAGE,
         }
 
-    highest_semantic_score = vector_results[0].get("vector_score", 0.0)
-    if highest_semantic_score < SEMANTIC_SIMILARITY_THRESHOLD:
-        print(f"[guardrail/pre] Query rejected — best semantic score: {highest_semantic_score:.3f}")
-        return {
-            "status": "refused",
-            "answer": REFUSAL_MESSAGE,
-            "citations": [],
-        }
+    # ── 1. Retrieval (Hybrid Vector + BM25) ──────────────────────────────────
+    vector_results = vector_search(clean_question, top_k=20, session_id=session_id)
+    bm25_results = bm25_search(clean_question, top_k=20, session_id=session_id)
 
-    # ── 3. BM25 Search + RRF Fusion ──────────────────────────────────────────
-    bm25_results = bm25_search(question, top_k=20, session_id=session_id)
+    # ── 2. Fusion ───────────────────────────────────────────────────────────
     fused_chunks_list = reciprocal_rank_fusion([bm25_results, vector_results], top_k=5)
 
-    # Build context dict: chunk_id → {page, section, text, source_file}
-    fused_chunks_dict: dict[str, dict] = {}
-    for chunk in fused_chunks_list:
-        fused_chunks_dict[chunk["chunk_id"]] = {
-            "page": chunk.get("page_number"),
-            "section": chunk.get("section_title"),
-            "text": chunk.get("text", ""),
-            "source_file": chunk.get("source_file", ""),
+    if not fused_chunks_list:
+        return {
+            "status": "refused",
+            "reason": "no_grounded_answer",
+            "message": REFUSAL_MESSAGE,
         }
 
-    # ── 4. LLM Generation ────────────────────────────────────────────────────
-    llm_output = generate_answer(question, context_chunks=fused_chunks_dict)
+    # Format context dictionary keyed by page_number (int) for LLM and verifier
+    # { page_number: {"section": str, "text": str, "source_file": str, "chunk_id": str} }
+    context_chunks_by_page: dict[int, dict[str, Any]] = {}
+    for chunk in fused_chunks_list:
+        page_num = chunk.get("page_number")
+        if page_num is not None:
+            # If multiple chunks share the same page, combine texts
+            if page_num in context_chunks_by_page:
+                context_chunks_by_page[page_num]["text"] += "\n" + chunk.get("text", "")
+            else:
+                context_chunks_by_page[page_num] = {
+                    "page": page_num,
+                    "section": chunk.get("section_title", "Untitled"),
+                    "text": chunk.get("text", ""),
+                    "source_file": chunk.get("source_file", ""),
+                    "chunk_id": chunk.get("chunk_id", f"page_{page_num}"),
+                }
 
-    # ── 5. Post-generation Guardrail (Citation Verifier) ─────────────────────
-    final_output = verify_citations(llm_output, fused_chunks_dict)
+    if not context_chunks_by_page:
+        return {
+            "status": "refused",
+            "reason": "no_grounded_answer",
+            "message": REFUSAL_MESSAGE,
+        }
 
-    if final_output["status"] == "refused":
-        print("[guardrail/post] Query refused — citations could not be verified in source chunks.")
+    # ── 3. LLM Structured Generation (Single Call) ──────────────────────────
+    llm_output = generate_answer(clean_question, context_chunks=context_chunks_by_page)
+
+    # ── 4. Deterministic Citation Verification ──────────────────────────────
+    final_output = verify_citations(llm_output, context_chunks_by_page, question=clean_question)
 
     return final_output

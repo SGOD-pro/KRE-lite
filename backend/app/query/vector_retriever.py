@@ -29,7 +29,6 @@ def vector_search(
         return []
 
     query_vec = embed_query(query)
-    _init_qdrant_collection()
     qdrant = get_qdrant_client()
 
     query_filter = None

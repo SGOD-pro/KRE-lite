@@ -18,6 +18,7 @@ class IngestDocumentResult(BaseModel):
 
 class IngestResponse(BaseModel):
     status: str = "ingested"
+    session_id: Optional[str] = None
     documents: List[IngestDocumentResult]
 
 
