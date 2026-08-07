@@ -1,83 +1,34 @@
 """
-config.py — central config, loaded from .env.
+shared/config.py — minimal Phase 0 config.
 
-Three ENV modes:
-  dev   → profile_name="aws", real AWS (Bedrock + RDS + ElastiCache)
-  local → profile_name="local", endpoint_url=http://localhost:4566 (Floci)
-          RDS and Redis connect to localhost directly (psycopg2 / redis-py
-          don't go through boto3, they use the TCP host/port directly)
-  prod  → no profile, no endpoint override — boto3 picks up IAM role
-          (ECS task role / EC2 instance profile / Lambda execution role)
+Phase 0 needs nothing from AWS / Qdrant / MongoDB.
+All service-specific config will be added in Phase 1 when those
+dependencies are added to requirements.txt.
 
-All service clients are created via get_boto3_kwargs() / get_boto3_kwargs_local()
-so callers never hard-code credentials.
+ENV var   : value   | meaning
+----------|---------|-------------------------------------------------
+ENV       | local   | running via docker-compose locally (default)
+ENV       | prod    | (future) deployed
 """
 from __future__ import annotations
 
 import os
-from functools import lru_cache
-
 from dotenv import load_dotenv
 
-load_dotenv()  # reads backend/.env (no-op if not found)
+load_dotenv()  # reads backend/.env if present (no-op if missing)
 
-# ── Core settings ──────────────────────────────────────────────────────────────
-ENV = os.getenv("ENV", "dev")                     # dev | local | prod
-AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
-LOCALSTACK_ENDPOINT = os.getenv("FLOCI_ENDPOINT", "http://localhost:4566")
+# ── Core ─────────────────────────────────────────────────────────────────────
+ENV = os.getenv("ENV", "local")
 
-# ── Bedrock model IDs ──────────────────────────────────────────────────────────
-TITAN_EMBED_MODEL_ID = os.getenv("TITAN_EMBED_MODEL_ID", "amazon.titan-embed-text-v2:0")
-NOVA_LLM_MODEL_ID    = os.getenv("NOVA_LLM_MODEL_ID",    "amazon.nova-pro-v1:0")
+# ── API port (informational — uvicorn reads this from CMD, not here) ─────────
+API_PORT = int(os.getenv("API_PORT", "8000"))
 
-# ── MongoDB Atlas ──────────────────────────────────────────────────────────────
-MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-MONGODB_DB  = os.getenv("MONGODB_DB", "cited_or_silent")
-
-# ── Qdrant Cloud ───────────────────────────────────────────────────────────────
-QDRANT_ENDPOINT = os.getenv("QDRANT_ENDPOINT", "http://localhost:6333")
-QDRANT_API_KEY  = os.getenv("QDRANT_API_KEY", "")
-
-# ── AWS S3 ─────────────────────────────────────────────────────────────────────
-S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "cited-or-silent-docs")
-
-
-# ── boto3 client factory ────────────────────────────────────────────────────────
-@lru_cache(maxsize=8)
-def get_boto3_client(service_name: str):
-    """
-    Creates a boto3 client using the correct session/profile based on ENV.
-    """
-    import boto3
-    kwargs = {"region_name": AWS_REGION}
-
-    if ENV == "dev":
-        session = boto3.Session(profile_name="aws")
-    elif ENV == "local":
-        session = boto3.Session(profile_name="local")
-        kwargs["endpoint_url"] = LOCALSTACK_ENDPOINT
-    else:
-        session = boto3.Session()
-
-    return session.client(service_name, **kwargs)
-
-
-@lru_cache(maxsize=1)
-def get_mongo_client():
-    """Lazy singleton MongoDB client."""
-    from pymongo import MongoClient
-    return MongoClient(MONGODB_URI)
-
-
-def get_qdrant_client():
-    """Returns a new Qdrant client to avoid idle connection drop on long Bedrock sleeps."""
-    from qdrant_client import QdrantClient
-    if QDRANT_API_KEY:
-        return QdrantClient(url=QDRANT_ENDPOINT, api_key=QDRANT_API_KEY, timeout=30)
-    else:
-        return QdrantClient(url=QDRANT_ENDPOINT, timeout=30)
-
-
-def get_s3_client():
-    """Returns an S3 boto3 client (not cached — S3 client is thread-safe)."""
-    return get_boto3_client("s3")
+# ── Phase 1+ config placeholders ─────────────────────────────────────────────
+# These env vars are documented here so the .env.example stays in sync,
+# but the actual client factories are added when Phase 1 deps are installed.
+#
+# LLM_API_KEY      = os.getenv("LLM_API_KEY", "")        # NVIDIA Build / OpenRouter
+# LLM_BASE_URL     = os.getenv("LLM_BASE_URL", "")
+# LLM_MODEL        = os.getenv("LLM_MODEL", "")
+# CHROMA_PATH      = os.getenv("CHROMA_PATH", "./chroma_db")
+# BM25_CACHE_PATH  = os.getenv("BM25_CACHE_PATH", "./bm25_index")

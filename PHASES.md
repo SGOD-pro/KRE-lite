@@ -1,4 +1,4 @@
-# PHASES.md — 24-Hour Build Sequence
+# PHASES.md — 48-Hour Build Sequence
 
 ## Rules
 - Do not start Phase N+1 until Phase N exit criteria pass.
@@ -120,6 +120,41 @@ cleaner demo video or write a better README. Do not use it to add
 scope.
 
 ---
+
+## Phase 5 — v1.1 (POST-DEPLOY ONLY, do not start till Phase 4 exit
+## + deploy confirmed working)
+
+Gate: v1 must be deployed + demo-video recorded FIRST. v1.1 is pure
+upside, never risk v1 core to build it.
+
+Deliverables:
+- page_index table + ingest-time summary gen (cheap model)
+- Tier 1 filter in retrieval path (planner.py update)
+- Confidence scoring (cosine threshold, pre-LLM gate)
+- Metrics capture wrap on llm_service.py
+- Context compression (regex clean, pre-embed)
+- auditor-agent (new module: app/audit/)
+- POST /audit endpoint
+- ConfidenceMeter, MetricsBar, Audit page (UI-UX.md v1.1)
+
+Exit Criteria:
+- v1's adversarial refusal set STILL 100% (regression check — v1.1
+  changes retrieval path, must not break v1's core guarantee)
+- Confidence tiers correctly gate: manually craft 3 queries, 1 per
+  tier, confirm correct routing + 0 LLM call logged for REFUSE tier
+- Audit endpoint: test doc + 3-rule ruleset, correct verdict per
+  DECISION.md Rule 14 (no forced pass/fail w/o evidence)
+- Metrics fields present + non-null on every "answered" response
+
+Test Cases Required (add to RULES.md v1.1 section):
+- test_confidence_tier_high_routes_correctly
+- test_confidence_tier_low_routes_correctly
+- test_confidence_tier_refuse_skips_llm_call (assert LLM mock not
+  called)
+- test_audit_rule_with_evidence_returns_pass_or_fail
+- test_audit_rule_without_evidence_returns_unable_to_verify_not_forced_binary
+- test_v1_adversarial_set_still_100_percent_after_v1.1_changes
+- test_metrics_fields_present_on_answered_response
 
 ## Deferred to "if time remains" (never load-bearing)
 

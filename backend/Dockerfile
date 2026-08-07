@@ -1,16 +1,14 @@
-FROM public.ecr.aws/lambda/python:3.13
+FROM python:3.13-slim
 
-# Copy requirements.txt
-COPY requirements.txt ${LAMBDA_TASK_ROOT}
+WORKDIR /backend
 
-# Install the specified packages
-RUN pip install -r requirements.txt
+# Install dependencies first (cached layer)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy all files in ./app
-COPY app/ ${LAMBDA_TASK_ROOT}/app/
+# Copy application code
+COPY . .
 
-# Copy the handler
-COPY handler.py ${LAMBDA_TASK_ROOT}/handler.py
+EXPOSE 8000
 
-# Set the CMD to your handler (could also be done as a parameter override outside of the Dockerfile)
-CMD [ "handler.handler" ]
+CMD ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

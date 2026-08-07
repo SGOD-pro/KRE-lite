@@ -60,6 +60,39 @@
   there's nothing to badge (BOUNDARIES.md).
 - Dark/light theme toggle, animations beyond basic loading states.
 
+## v1.1 Additions (post-deploy only)
+
+### Component: ConfidenceMeter
+
+Attach to AnswerBubble. Small horizontal bar + label under answer
+text, above citation chips.
+- HIGH (>0.85): primary/green tone, "High confidence"
+- LOW (0.70-0.84): yellow/amber tone (use chart-5 `#b4552d` warm
+  amber-ish, or add explicit warning yellow if theme lacks one),
+  "Partial match — verify manually"
+- Refuse case: no meter shown, RefusalBubble stays as-is from v1
+
+### Component: MetricsBar
+
+Small, low-emphasis row under citation chips, muted-foreground text,
+tiny font (11-12px): `Latency: 1.2s · Tokens: 450 in / 85 out ·
+Pages: 3/45`. Not the visual focus — a flex detail for judges who
+look closely, must not compete with answer text for attention.
+
+### Page 3 — Audit Mode (v1.1, new page)
+
+- Ruleset input: textarea, one rule per line, secondary surface,
+  0.5rem radius, placeholder "1. Must have...\n2. Must list...".
+- "Run Audit" button, primary color, disabled until doc ingested +
+  ruleset non-empty.
+- Results: table, one row per rule. Columns: Rule text (truncated,
+  full on hover), Verdict badge (Pass = primary/green, Fail =
+  destructive color, Unable to verify = muted/grey — 3 distinct
+  colors, not just 2), Evidence (citation chip, same component as
+  Page 1, empty for "unable to verify" rows).
+- Export button: small secondary button, "Export report" (CSV/PDF,
+  stretch — cut if time short, not core to v1.1 either).
+
 ## Demo Script Alignment
 
 The UI's entire job is to make the guardrail visible in real time:

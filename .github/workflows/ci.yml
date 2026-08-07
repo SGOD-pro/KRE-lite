@@ -5,121 +5,85 @@ on:
   pull_request:
 
 jobs:
-  backend-tests:
-    name: Backend — pytest (unit, ingestion, retrieval, adversarial)
+  # ─── Phase 0: must be green from commit one ────────────────────────────────
+  backend-unit:
+    name: Backend — unit tests
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.13"
           cache: "pip"
+          cache-dependency-path: backend/requirements.txt
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt --break-system-packages || pip install -r requirements.txt
-          pip install pytest pytest-cov --break-system-packages || pip install pytest pytest-cov
+        run: pip install -r requirements.txt
 
-      - name: Lint (ruff)
-        run: |
-          pip install ruff --break-system-packages || pip install ruff
-          ruff check .
+      - name: Verify test collection (zero errors = green pipeline)
+        run: pytest tests/unit/ --collect-only -q
 
-      - name: Run unit tests (citation verifier)
-        run: pytest tests/unit/test_citation_verifier.py -v
+      - name: Run unit tests
+        run: pytest tests/unit/ -v
 
-      - name: Run ingestion tests
-        run: pytest tests/unit/test_ingestion.py -v
+  # ─── Phase 3+: e2e tests (disabled until Phase 3 deliverables exist) ───────
+  # Uncomment this job when:
+  #   - frontend/ has a package.json with playwright configured
+  #   - backend tests/unit/ has Playwright smoke-test wrapper
+  #
+  # e2e-tests:
+  #   name: End-to-End — Playwright
+  #   runs-on: ubuntu-latest
+  #   needs: backend-unit
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Set up Node
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: "20"
+  #         cache: "npm"
+  #         cache-dependency-path: frontend/package-lock.json
+  #     - name: Install frontend deps
+  #       working-directory: frontend
+  #       run: npm ci
+  #     - name: Install Playwright browsers
+  #       working-directory: frontend
+  #       run: npx playwright install --with-deps chromium
+  #     - name: Start backend
+  #       working-directory: backend
+  #       run: |
+  #         nohup python -m uvicorn app.api.main:app --host 0.0.0.0 --port 8000 &
+  #         sleep 5
+  #         curl --fail http://localhost:8000/health
+  #     - name: Run Playwright tests
+  #       working-directory: frontend
+  #       run: npx playwright test
+  #       env:
+  #         BASE_URL: http://localhost:3000
+  #         API_URL: http://localhost:8000
 
-      - name: Run retrieval sanity tests
-        run: pytest tests/unit/test_retrieval.py -v
-
-      - name: Run adversarial refusal test set
-        # This is the test that matters most. It is intentionally its
-        # own step, not folded into a generic `pytest tests/` run, so
-        # that a failure here is unambiguous in the CI log rather than
-        # buried among unrelated test failures. RULES.md target: 100%.
-        run: pytest tests/unit/test_adversarial_refusal.py -v --tb=short
-
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pytest-coverage
-          path: htmlcov/
-          retention-days: 7
-
-  e2e-tests:
-    name: End-to-End — Playwright
-    runs-on: ubuntu-latest
-    needs: backend-tests
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Install Playwright browsers
-        working-directory: frontend
-        run: npx playwright install --with-deps chromium
-
-      - name: Set up Python (for backend service used by e2e tests)
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install backend dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt --break-system-packages || pip install -r requirements.txt
-
-      - name: Start backend service
-        run: |
-          nohup python -m uvicorn app.api.main:app --host 0.0.0.0 --port 8000 &
-          sleep 5
-          curl --fail http://localhost:8000/health
-
-      - name: Run Playwright tests
-        working-directory: frontend
-        run: npx playwright test
-        env:
-          BASE_URL: http://localhost:3000
-          API_URL: http://localhost:8000
-
-      - name: Upload Playwright report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-report
-          path: frontend/playwright-report/
-          retention-days: 7
-
+  # ─── Boundaries check: tripwire for BOUNDARIES.md violations ───────────────
   boundaries-check:
-    name: Sanity — no scope creep from BOUNDARIES.md
+    name: Sanity — BOUNDARIES.md scope check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fail if disallowed dependencies/services crept in
-        # Cheap grep-based tripwire, not a substitute for the manual
-        # PROMPT-VALIDATE pass in PROMPTS.md, but catches the obvious
-        # cases automatically on every push.
+      - name: Fail if disallowed patterns found in app/
+        # Cheap grep-based tripwire — catches the obvious cases.
+        # Not a substitute for the manual PROMPT-VALIDATE pass in PROMPTS.md.
+        shell: bash
         run: |
           set -e
-          FORBIDDEN_PATTERNS="okf_builder|page_index_service|graph_retriever|boto3.client\\('sqs'\\)|elasticache"
-          if grep -rEi "$FORBIDDEN_PATTERNS" --include="*.py" app/ 2>/dev/null; then
+          FORBIDDEN="okf_builder|page_index_service|graph_retriever|boto3\.client\('sqs'\)|elasticache|LocalStack"
+          if grep -rEi "$FORBIDDEN" --include="*.py" backend/app/ 2>/dev/null; then
             echo "::error::Found code matching a BOUNDARIES.md excluded pattern. See BOUNDARIES.md."
             exit 1
           fi
-          echo "No forbidden patterns found."
+          echo "No forbidden patterns found — boundaries clean."

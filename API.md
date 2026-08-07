@@ -75,6 +75,67 @@ edge case the client has to infer (DECISION.md Rule 5, AGENT.md).
   do not fall back to an unverified answer just because the provider
   call failed — DECISION.md Rule 6 applies even under infra failure)
 
+## v1.1 Additions (post-deploy only)
+
+### POST /query — response addendum (v1.1)
+
+Add fields to existing "answered" response shape:
+```json
+{
+  "status": "answered",
+  "answer": "...",
+  "citations": [...],
+  "confidence_tier": "high",
+  "confidence_score": 0.91,
+  "metrics": {
+    "latency_ms": 1180,
+    "prompt_tokens": 450,
+    "completion_tokens": 85,
+    "total_tokens": 535,
+    "pages_searched": 3,
+    "pages_total": 45
+  }
+}
+```
+`confidence_tier` one of `"high" | "low"`. Refuse case unchanged
+shape from v1, but add `"pages_searched": 0` (query never left tier
+1 filter).
+
+### POST /audit
+
+**Request:**
+```json
+{
+  "ruleset": [
+    "Must have a fire extinguisher within 10 feet.",
+    "Must list a backup communication protocol."
+  ]
+}
+```
+(assumes doc already ingested via /ingest)
+
+**Response:**
+```json
+{
+  "status": "complete",
+  "results": [
+    {
+      "rule": "Must have a fire extinguisher within 10 feet.",
+      "verdict": "pass",
+      "citations": [{"page": 8, "section": "Safety Equipment", "quote": "..."}]
+    },
+    {
+      "rule": "Must list a backup communication protocol.",
+      "verdict": "unable_to_verify",
+      "citations": []
+    }
+  ],
+  "metrics": {"total_tokens": 1820, "latency_ms": 4300}
+}
+```
+`verdict` one of `"pass" | "fail" | "unable_to_verify"` —
+DECISION.md Rule 14, never force pass/fail w/o evidence.
+
 ## GET /health
 
 Trivial liveness check for docker-compose / CI. Returns `{"status":

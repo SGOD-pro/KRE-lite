@@ -45,6 +45,27 @@ violated, that's a bug, not a tuning knob.
 10. No feature ships without a corresponding test in RULES.md.
     "It looked right when I tried it" is not an exit criterion.
 
+## v1.1 Amendments (post-deploy, do not apply during v1 build)
+
+11. Rule 1 amended for v1.1 ONLY: Q&A flow stays exactly 1 LLM call
+    per query. Auditor flow = 1 LLM call PER RULE (ruleset of 5 rules
+    = 5 calls, logged, not silent). Never combine multiple rules into
+    1 call — mixes evidence, breaks per-rule citation trace.
+12. Confidence tiers (HIGH/LOW/REFUSE) computed BEFORE any LLM call,
+    via cosine sim only. REFUSE tier never reaches LLM_service.py.
+    This is stricter than v1's post-hoc verify-then-strip; v1's
+    verifier logic stays unchanged and still runs on HIGH/LOW tier
+    output as a second, independent check — belt + suspenders, not
+    replace.
+13. LOW confidence answers still go thru citation_verifier.py same
+    as HIGH. LOW tier only changes UI treatment + adds "partial
+    match, verify" text, not the guardrail logic itself.
+14. Auditor agent's per-rule Pass/Fail still requires >=1 verified
+    citation to say "Pass" or "Fail" with evidence. Zero surviving
+    citations for a rule = "Unable to verify" (3rd state, not
+    Pass/Fail forced binary) — do not force a rule into Pass/Fail
+    when no evidence found, that IS a fabrication risk.
+
 ## Explicitly Deferred (not cut forever, just not in scope for 48h)
 
 - Multi-turn conversation memory

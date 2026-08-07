@@ -1,24 +1,24 @@
-# Web Framework
-fastapi==0.138.0
-mangum==0.21.0
-uvicorn==0.49.0
+# ── Web Framework ─────────────────────────────────────────────────────────────
+# Note: pinned to versions that have pre-built wheels for Python 3.13
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
 
-# AWS
-boto3==1.43.36
+# ── Validation & Config ───────────────────────────────────────────────────────
+pydantic>=2.7.0
+python-dotenv>=1.0.0
 
-# Validation & Config
-pydantic==2.13.4
-pydantic-settings==2.14.2
-python-dotenv==1.2.2
+# ── File upload support ───────────────────────────────────────────────────────
+python-multipart>=0.0.9
 
-# PDF Processing
-pymupdf==1.27.2.3
+# ── Testing ───────────────────────────────────────────────────────────────────
+pytest>=8.0.0
+httpx2>=0.28.0
 
-# Vector Database
-qdrant-client==1.15.1
-
-# Request parsing
-python-multipart==0.0.32
-
-# Optional (recommended for production)
-orjson==3.11.3
+# ── Phase 1+ deps (to be added when Phase 1 starts) ──────────────────────────
+# pymupdf         — PDF chunker
+# rank-bm25       — BM25 retrieval
+# chromadb        — vector store (local, no external service)
+# onnxruntime     — BGE-small-en-v1.5 ONNX embeddings
+# sentence-transformers — tokenizer helper for BGE-small
+# openai          — LLM call (OpenRouter / NVIDIA Build via openai-compat)
+# thefuzz         — fuzzy-match in citation_verifier

@@ -1,33 +1,34 @@
-version: '3.8'
+version: '3.9'
 
 services:
   api:
-    build: 
+    build:
       context: ./backend
     ports:
       - "8000:8000"
     volumes:
-      - ./backend/app:/app
+      # mount source for live reload during development
+      - ./backend:/backend
     environment:
       - PYTHONUNBUFFERED=1
       - ENV=local
-      - RDS_HOST=postgres
-      - REDIS_HOST=redis
-      - FLOCI_ENDPOINT=http://host.docker.internal:4566
-    depends_on:
-      - postgres
-      - redis
+    # Phase 1 will add:
+    #   depends_on: [chroma]  (if using ChromaDB server mode)
+    # OR no external service at all (ChromaDB in embedded/local mode — preferred)
 
-  postgres:
-    image: pgvector/pgvector:pg16
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=changeme
-      - POSTGRES_DB=cited_or_silent
-    ports:
-      - "5432:5432"
+  # ── Phase 1+ services (uncomment when adding deps) ──────────────────────────
+  #
+  # chroma:
+  #   image: chromadb/chroma:latest
+  #   ports:
+  #     - "8001:8000"
+  #   volumes:
+  #     - chroma_data:/chroma/.chroma/index
+  #
+  # NOTE: postgres + pgvector were in an earlier draft of this compose file.
+  # BOUNDARIES.md says "Postgres+pgvector ONLY if infra time allows."
+  # The approved Phase 0-2 vector store is local Chroma or sqlite-vec.
+  # Do NOT add postgres back unless BOUNDARIES.md's condition is met.
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
+# volumes:
+#   chroma_data:
