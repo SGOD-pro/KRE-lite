@@ -23,7 +23,7 @@ def invalidate_index() -> None:
     pass
 
 
-def bm25_search(query: str, top_k: int = 20) -> List[dict[str, Any]]:
+def bm25_search(query: str, top_k: int = 20, session_id: str | None = None) -> List[dict[str, Any]]:
     """
     Return up to `top_k` chunks ranked by MongoDB Atlas Search score.
     """
@@ -33,16 +33,21 @@ def bm25_search(query: str, top_k: int = 20) -> List[dict[str, Any]]:
     mongo = get_mongo_client()
     db = mongo[MONGODB_DB]
     
-    pipeline = [
-        {
-            "$search": {
-                "index": "default",
-                "text": {
-                    "query": query,
-                    "path": "text"
-                }
+    search_stage = {
+        "$search": {
+            "index": "default",
+            "text": {
+                "query": query,
+                "path": "text"
             }
-        },
+        }
+    }
+    
+    pipeline = [search_stage]
+    if session_id:
+        pipeline.append({"$match": {"session_id": session_id}})
+        
+    pipeline.extend([
         {
             "$limit": top_k
         },

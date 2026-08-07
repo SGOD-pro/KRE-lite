@@ -13,9 +13,13 @@ from app.ingest.store import get_chunks_by_ids, COLLECTION_NAME
 from app.shared.config import get_qdrant_client
 
 
+from qdrant_client.http.models import FieldCondition, Filter, MatchValue
+
+
 def vector_search(
     query: str,
     top_k: int = 10,
+    session_id: str | None = None,
 ) -> List[dict[str, Any]]:
     """
     Search Qdrant for semantic similarity to `query`.
@@ -27,10 +31,17 @@ def vector_search(
     query_vec = embed_query(query)
 
     qdrant = get_qdrant_client()
+    query_filter = None
+    if session_id:
+        query_filter = Filter(
+            must=[FieldCondition(key="session_id", match=MatchValue(value=session_id))]
+        )
+
     try:
         search_result = qdrant.query_points(
             collection_name=COLLECTION_NAME,
             query=query_vec,
+            query_filter=query_filter,
             limit=top_k,
         ).points
     except Exception as e:

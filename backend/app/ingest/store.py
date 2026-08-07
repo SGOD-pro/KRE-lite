@@ -35,7 +35,7 @@ def _get_qdrant_id(chunk_id: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, chunk_id))
 
 
-def add_chunks(chunks: List[dict[str, Any]]) -> None:
+def add_chunks(chunks: List[dict[str, Any]], session_id: str | None = None) -> None:
     """
     Embed and upsert a list of chunk dicts into MongoDB and Qdrant.
 
@@ -61,29 +61,35 @@ def add_chunks(chunks: List[dict[str, Any]]) -> None:
         qdrant_id = _get_qdrant_id(chunk["chunk_id"])
         
         # 1. Prepare Qdrant Point (Payload has NO text)
+        payload = {
+            "chunk_id": chunk["chunk_id"],
+            "source_file": chunk["source_file"],
+            "page_number": chunk["page_number"],
+            "section_title": chunk["section_title"],
+        }
+        if session_id:
+            payload["session_id"] = session_id
+
         points.append(
             PointStruct(
                 id=qdrant_id,
                 vector=embedding,
-                payload={
-                    "chunk_id": chunk["chunk_id"],
-                    "source_file": chunk["source_file"],
-                    "page_number": chunk["page_number"],
-                    "section_title": chunk["section_title"],
-                },
+                payload=payload,
             )
         )
         
         # 2. Prepare MongoDB Document
-        mongo_docs.append({
+        doc = {
             "_id": chunk["chunk_id"],  # use chunk_id as primary key
             "chunk_id": chunk["chunk_id"],
             "source_file": chunk["source_file"],
             "page_number": chunk["page_number"],
             "section_title": chunk["section_title"],
             "text": chunk["text"],
-            # document_id and chunk_index could be added later if needed by chunker
-        })
+        }
+        if session_id:
+            doc["session_id"] = session_id
+        mongo_docs.append(doc)
 
     # Upsert to Qdrant
     qdrant.upsert(

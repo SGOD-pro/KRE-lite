@@ -109,9 +109,9 @@ def test_ingest_pdf_happy_path_mocked():
 
 # ── /query — Phase 2 stub ─────────────────────────────────────────────────────
 
-def test_query_stub_returns_503():
+def test_query_returns_200():
     r = client.post("/query", json={"question": "What is the notice period?"})
-    assert r.status_code == 503
+    assert r.status_code == 200
 
 
 def test_query_empty_question_returns_400():

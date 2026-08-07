@@ -46,6 +46,10 @@ def health():
 
 # ── /ingest ──────────────────────────────────────────────────────────────────
 
+import uuid
+from typing import List, Optional
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+
 class IngestDocumentResult(BaseModel):
     filename: str
     chunks_created: int
@@ -54,6 +58,7 @@ class IngestDocumentResult(BaseModel):
 
 class IngestResponse(BaseModel):
     status: str = "ingested"
+    session_id: str
     documents: List[IngestDocumentResult]
 
 
@@ -61,28 +66,27 @@ ALLOWED_SUFFIXES = {".pdf"}
 
 
 @app.post("/ingest", response_model=IngestResponse)
-async def ingest(files: List[UploadFile] = File(...)):
+async def ingest(
+    files: List[UploadFile] = File(...),
+    session_id: Optional[str] = Form(None)
+):
     """
     Upload one or more PDF files. Each is chunked, embedded, and stored.
-
-    API.md error contract:
-      400 — unsupported file type
-      422 — file present but unparseable / no text extracted
+    Returns session_id for persistence.
     """
     results: List[IngestDocumentResult] = []
+    active_session_id = session_id or f"session_{uuid.uuid4().hex[:12]}"
 
     for upload in files:
         filename = upload.filename or "unknown"
         suffix = Path(filename).suffix.lower()
 
-        # 400: unsupported type
         if suffix not in ALLOWED_SUFFIXES:
             raise HTTPException(
                 status_code=400,
                 detail=f"Unsupported file type '{suffix}'. Only PDF files are accepted.",
             )
 
-        # Write to a temp file so PyMuPDF can open it by path
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
             tmp_path = tmp.name
             shutil.copyfileobj(upload.file, tmp)
@@ -90,12 +94,10 @@ async def ingest(files: List[UploadFile] = File(...)):
         try:
             chunks = chunk_document(tmp_path)
         except ValueError as exc:
-            # ValueError from chunker = unparseable / no text — 422
             raise HTTPException(status_code=422, detail=str(exc))
         except FileNotFoundError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         except Exception as exc:
-            # Unexpected error — surface cleanly
             raise HTTPException(
                 status_code=422,
                 detail=f"Failed to process '{filename}': {exc}",
@@ -103,12 +105,11 @@ async def ingest(files: List[UploadFile] = File(...)):
         finally:
             os.unlink(tmp_path)
 
-        # Fix source_file to use the original upload name, not the tmp path
         for c in chunks:
             c["source_file"] = filename
 
-        add_chunks(chunks)
-        invalidate_index()   # BM25 must be rebuilt after new chunks added
+        add_chunks(chunks, session_id=active_session_id)
+        invalidate_index()
 
         pages = max((c["page_number"] for c in chunks), default=0)
         results.append(
@@ -119,22 +120,28 @@ async def ingest(files: List[UploadFile] = File(...)):
             )
         )
 
-    return IngestResponse(documents=results)
+    return IngestResponse(session_id=active_session_id, documents=results)
 
 
 # ── /query ────────────────────────────────────────────────────────────────────
-# Phase 2 stub — returns 503 with a clear message so tests don't misinterpret.
-
 class QueryRequest(BaseModel):
     question: str
+    session_id: Optional[str] = None
 
 
 @app.post("/query")
 async def query(body: QueryRequest):
     if not body.question.strip():
         raise HTTPException(status_code=400, detail="Question must not be empty.")
-    # Phase 2 placeholder
-    raise HTTPException(
-        status_code=503,
-        detail="Generation pipeline not yet implemented (Phase 2).",
-    )
+        
+    from app.query.planner import answer_question
+    
+    try:
+        result = answer_question(body.question, session_id=body.session_id)
+        return result
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"An error occurred while processing the query: {exc}"
+        )
