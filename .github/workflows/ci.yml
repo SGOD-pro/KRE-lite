@@ -29,11 +29,16 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Verify test collection (zero errors = green pipeline)
-        run: pytest tests/unit/ --collect-only -q
-
       - name: Run unit tests
         run: pytest tests/unit/ -v
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION || 'ap-south-1' }}
+          QDRANT_ENDPOINT: ${{ secrets.QDRANT_ENDPOINT }}
+          QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGODB_DB: ${{ secrets.MONGODB_DB || 'cited_or_silent' }}
 
   frontend-build:
     name: Frontend — Typecheck & Build
