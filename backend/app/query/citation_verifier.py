@@ -112,14 +112,27 @@ def _quote_matches_chunk(quote: str, chunk_text: str) -> bool:
     # If the chunker split a sentence across section_title and text, or dropped words,
     # the sliding window can't match. Fall back to checking if enough content words
     # from the quote exist somewhere in the chunk text.
+    NUMBER_WORDS = {
+        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
+        "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen",
+        "sixteen", "seventeen", "eighteen", "nineteen", "twenty", "thirty",
+        "forty", "fifty", "sixty", "seventy", "eighty", "ninety", "hundred",
+        "thousand", "million", "billion",
+    }
     content_words_in_quote = [w for w in q_words if w not in STOPWORDS and len(w) > 2]
     if content_words_in_quote:
+        # Number words (written-out digits) in the quote MUST exist in the chunk
+        for nw in content_words_in_quote:
+            if nw in NUMBER_WORDS:
+                if not any(fuzz.ratio(nw, tw) >= 90 for tw in t_words):
+                    return False
+
         matched_count = sum(
             1 for w in content_words_in_quote
             if any(fuzz.ratio(w, tw) >= 80 for tw in t_words)
         )
-        # Accept if at least 3 content words match AND at least 50% of content words match
-        if matched_count >= 3 and matched_count / len(content_words_in_quote) >= 0.50:
+        # Accept if at least 4 content words match AND at least 75% of content words match
+        if matched_count >= 4 and matched_count / len(content_words_in_quote) >= 0.75:
             return True
 
     return False
@@ -163,16 +176,21 @@ def verify_citations(
                 return _refusal()
 
     verified: list[dict[str, Any]] = []
+    seen_cites: set[tuple[int, str]] = set()
 
     for citation in raw_citations:
         # DECISION.md Rule 3: page + section + quote all required.
         # Missing any one -> auto-fail, no partial credit.
         page = citation.get("page")
         section = citation.get("section")
-        quote = citation.get("quote", "")
+        quote = (citation.get("quote") or "").strip()
 
         if page is None or not section or not quote:
             continue  # auto-fail
+
+        cite_key = (page, quote.lower())
+        if cite_key in seen_cites:
+            continue  # skip exact duplicate citation
 
         # Look up chunk by page number in retrieved_chunks
         chunk_data = retrieved_chunks.get(page)
@@ -188,6 +206,7 @@ def verify_citations(
         chunk_id = chunk_data.get("chunk_id", f"page_{page}")
 
         if _quote_matches_chunk(quote, full_searchable_text):
+            seen_cites.add(cite_key)
             verified.append({
                 "page": page,
                 "section": section,
@@ -203,10 +222,14 @@ def verify_citations(
         for alt_page, alt_chunk in retrieved_chunks.items():
             if alt_page == page:
                 continue  # already tried this
+            alt_key = (alt_page, quote.lower())
+            if alt_key in seen_cites:
+                continue
             alt_text = alt_chunk.get("text", "")
             alt_section = alt_chunk.get("section", "")
             alt_searchable = f"{alt_section}\n{alt_text}" if alt_section else alt_text
             if _quote_matches_chunk(quote, alt_searchable):
+                seen_cites.add(alt_key)
                 verified.append({
                     "page": alt_page,
                     "section": alt_chunk.get("section", section),

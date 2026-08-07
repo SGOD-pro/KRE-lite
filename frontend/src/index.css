@@ -4,24 +4,24 @@
 
 @layer base {
   :root {
-    --background: #fcf9f6;
-    --foreground: #1c1c1a;
-    --card: #f6f3f1;
-    --card-foreground: #1c1c1a;
+    --background: #f8fafc;
+    --foreground: #0f172a;
+    --card: #ffffff;
+    --card-foreground: #0f172a;
     --popover: #ffffff;
-    --popover-foreground: #1c1c1a;
+    --popover-foreground: #0f172a;
     --primary: #9a4021;
     --primary-foreground: #ffffff;
     --primary-container: #b95837;
-    --secondary: #e5e2d8;
-    --secondary-foreground: #66655d;
-    --muted: #f0edeb;
-    --muted-foreground: #56423c;
-    --accent: #ffdbce;
-    --accent-foreground: #7a2f0a;
-    --destructive: #ba1a1a;
-    --border: #dcc1b8;
-    --input: #e5e2e0;
+    --secondary: #f1f5f9;
+    --secondary-foreground: #334155;
+    --muted: #f1f5f9;
+    --muted-foreground: #64748b;
+    --accent: #ffedd5;
+    --accent-foreground: #9a3412;
+    --destructive: #ef4444;
+    --border: #e2e8f0;
+    --input: #f1f5f9;
     --ring: #9a4021;
     --radius: 0.5rem;
   }
@@ -36,17 +36,17 @@
   }
 }
 
-/* Custom design classes matching DESIGN.md */
+/* Custom design classes matching clean minimalist theme */
 .bg-surface {
-  background-color: #fcf9f6;
+  background-color: #f8fafc;
 }
 
 .bg-surface-container {
-  background-color: #f0edeb;
+  background-color: #f1f5f9;
 }
 
 .bg-surface-low {
-  background-color: #f6f3f1;
+  background-color: #f8fafc;
 }
 
 .bg-surface-bright {
@@ -66,7 +66,7 @@
 }
 
 .border-rust {
-  border-color: #dcc1b8;
+  border-color: #e2e8f0;
 }
 
 /* Citation Chip Style */
@@ -75,29 +75,54 @@
   align-items: center;
   gap: 0.375rem;
   padding: 0.25rem 0.625rem;
-  background-color: #e5e2d8;
+  background-color: #f1f5f9;
   color: #9a4021;
   font-weight: 600;
   font-size: 0.75rem;
   border-radius: 0.375rem;
-  border: 1px solid #dcc1b8;
+  border: 1px solid #e2e8f0;
   cursor: pointer;
   transition: all 0.15s ease-in-out;
 }
 
 .citation-chip:hover {
-  background-color: #ffdbce;
-  border-color: #9a4021;
+  background-color: #ffedd5;
+  border-color: #fdba74;
+  color: #9a4021;
   transform: translateY(-1px);
 }
 
 /* Highlighted Quote Box in Document Viewer */
 .quote-highlight {
-  background-color: #ffdbce;
+  background-color: #fff7ed;
   border-left: 3px solid #9a4021;
   padding: 0.75rem 1rem;
   border-radius: 0.375rem;
   margin: 0.75rem 0;
-  color: #370e00;
+  color: #431407;
   font-style: normal;
+}
+
+/* Custom Sleek Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9a4021;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
 }

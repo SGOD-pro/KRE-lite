@@ -83,14 +83,21 @@ def answer_question(question: str, session_id: str | None = None) -> dict[str, A
     for chunk in fused_chunks_list:
         page_num = chunk.get("page_number")
         if page_num is not None:
-            # If multiple chunks share the same page, combine texts
+            chunk_text = (chunk.get("text") or "").strip()
+            if not chunk_text:
+                continue
             if page_num in context_chunks_by_page:
-                context_chunks_by_page[page_num]["text"] += "\n" + chunk.get("text", "")
+                existing_text = context_chunks_by_page[page_num]["text"]
+                # Only append if chunk_text is not already contained in existing_text
+                if chunk_text not in existing_text and existing_text not in chunk_text:
+                    context_chunks_by_page[page_num]["text"] += "\n\n" + chunk_text
+                elif len(chunk_text) > len(existing_text):
+                    context_chunks_by_page[page_num]["text"] = chunk_text
             else:
                 context_chunks_by_page[page_num] = {
                     "page": page_num,
                     "section": chunk.get("section_title", "Untitled"),
-                    "text": chunk.get("text", ""),
+                    "text": chunk_text,
                     "source_file": chunk.get("source_file", ""),
                     "chunk_id": chunk.get("chunk_id", f"page_{page_num}"),
                 }
