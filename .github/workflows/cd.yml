@@ -1,13 +1,13 @@
 name: CD
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "backend/**"
-      - "frontend/**"
-      - ".github/workflows/cd.yml"
+  # push:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - "backend/**"
+  #     - "frontend/**"
+  #     - ".github/workflows/cd.yml"
 
   workflow_dispatch:
     inputs:
@@ -115,26 +115,11 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install Frontend Dependencies
-        run: npm ci
-
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
 
-      - name: Pull Vercel Environment
-        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-
-      - name: Build Frontend
-        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-
-      - name: Deploy Frontend
-        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+      - name: Deploy to Vercel
+        run: vercel deploy --prod --yes --token=${{ secrets.VERCEL_TOKEN }}
         env:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
