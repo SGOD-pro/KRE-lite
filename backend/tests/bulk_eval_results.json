@@ -1,0 +1,429 @@
+{
+  "summary": {
+    "total": 60,
+    "pass": 51,
+    "fail": 9
+  },
+  "results": [
+    {
+      "id": 1,
+      "question": "What BLEU score did the big Transformer model achieve on the WMT 2014 English-to-German translation task?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "The big Transformer model achieved a BLEU score of 28.4 on the WMT 2014 English-to-German translation task."
+    },
+    {
+      "id": 2,
+      "question": "How many GPUs were used to train the base Transformer model for 100,000 steps?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "8 GPUs were used to train the base Transformer model for 100,000 steps."
+    },
+    {
+      "id": 3,
+      "question": "What is the dimension of the model (d_model) used in the base Transformer architecture?",
+      "passed": false,
+      "reason": "Failed to answer. Status: refused | Msg: I don't have enough information in the provided documents to answer that.",
+      "answer": ""
+    },
+    {
+      "id": 4,
+      "question": "How is positional encoding implemented in the original Transformer model?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "Positional encoding in the original Transformer model is implemented using sine and cosine functions of different frequencies."
+    },
+    {
+      "id": 5,
+      "question": "Why is the dot product scaled by the square root of dk in scaled dot-product attention?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "To counteract the effect of dot products growing large in magnitude for larger values of d, pushing the softmax function into regions where it has extremely small gradients."
+    },
+    {
+      "id": 6,
+      "question": "How many parallel attention layers (heads) are employed in the base Transformer?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "The base Transformer employs 8 parallel attention layers (heads)."
+    },
+    {
+      "id": 7,
+      "question": "What optimizer was used to train the Transformer, and what were the beta1 and beta2 parameters?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "The Adam optimizer was used to train the Transformer with beta1 = 0.9 and beta2 = 0.98."
+    },
+    {
+      "id": 8,
+      "question": "What is the purpose of masking in the decoder's self-attention sub-layer?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "The purpose of masking in the decoder's self-attention sub-layer is to prevent positions from attending to subsequent positions, ensuring that predictions for position i can depend only on the known outputs at positions less than i."
+    },
+    {
+      "id": 9,
+      "question": "What were the two machine translation tasks used to evaluate the Transformer?",
+      "passed": true,
+      "reason": "Answered with 3 citations.",
+      "answer": "The two machine translation tasks used to evaluate the Transformer were English-to-German and English-to-French."
+    },
+    {
+      "id": 10,
+      "question": "What is the inner-layer dimensionality (dff) of the position-wise feed-forward network in the base Transformer?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "The inner-layer dimensionality (dff) of the position-wise feed-forward network in the base Transformer is 2048."
+    },
+    {
+      "id": 11,
+      "question": "According to the survey, what are the three main categories of deep attention mechanisms?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "The three main categories of deep attention mechanisms are soft attention, hard attention, and self-attention."
+    },
+    {
+      "id": 12,
+      "question": "What was the initial motivation for attention research in Deep Learning?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "The initial motivation for attention research in Deep Learning was to select, modulate, and focus on the information most relevant to behavior due to our limited ability to process competing sources."
+    },
+    {
+      "id": 13,
+      "question": "Which architecture introduced the first attention mechanism in NLP?",
+      "passed": false,
+      "reason": "Failed to answer. Status: refused | Msg: I don't have enough information in the provided documents to answer that.",
+      "answer": ""
+    },
+    {
+      "id": 14,
+      "question": "What is the main difference between soft and hard attention in terms of differentiability?",
+      "passed": false,
+      "reason": "Failed to answer. Status: refused | Msg: I don't have enough information in the provided documents to answer that.",
+      "answer": ""
+    },
+    {
+      "id": 15,
+      "question": "Which architecture is considered the first end-to-end attention model for processing sequential data without recurrences?",
+      "passed": false,
+      "reason": "Failed to answer. Status: refused | Msg: I don't have enough information in the provided documents to answer that.",
+      "answer": ""
+    },
+    {
+      "id": 16,
+      "question": "How does attention help in Neural Turing Machines (NTM)?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "Attention helps in Neural Turing Machines (NTM) by making updates and recoveries in external memory."
+    },
+    {
+      "id": 17,
+      "question": "What problem does the Spatial Transformer Network (STN) solve in computer vision?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "The Spatial Transformer Network (STN) solves the problem of learning image transformations that can be easily plugged into different architectures."
+    },
+    {
+      "id": 18,
+      "question": "What are the three desiderata considered when comparing self-attention to recurrent and convolutional layers?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "The three desiderata considered when comparing self-attention to recurrent and convolutional layers are the total computational complexity per layer, the amount of computation that can be parallelized, and the path length between long-range dependencies in the network."
+    },
+    {
+      "id": 19,
+      "question": "How does the DRAW model use attention differently than traditional generative models?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "The DRAW model uses attention to iteratively construct scenes by accumulating modifications emitted by the decoder, each observed by the encoder, whereas traditional generative models aim to generate complete scenes at once."
+    },
+    {
+      "id": 20,
+      "question": "What is the main characteristic of multi-head attention?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "The main characteristic of multi-head attention is that it allows the model to jointly attend to information from different representation subspaces at different positions."
+    },
+    {
+      "id": 21,
+      "question": "According to the survey, what is the role of attention in abstractive text summarization?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "Attention plays a role in abstractive text summarization by allowing the model to pay more or less attention to individual words and sentences when constructing the document\u2019s representation."
+    },
+    {
+      "id": 22,
+      "question": "What is co-attention used for?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "Co-attention is used for text matching applications."
+    },
+    {
+      "id": 23,
+      "question": "What does the Squeeze-and-Excitation Network (SENet) use attention for?",
+      "passed": false,
+      "reason": "Failed to answer. Status: refused | Msg: I don't have enough information in the provided documents to answer that.",
+      "answer": ""
+    },
+    {
+      "id": 24,
+      "question": "Why is attention used in Recommender Systems?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "Attention is used in Recommender Systems to assign weights to a user\u2019s interacted items, capturing long and short-term interests more effectively than traditional methods."
+    },
+    {
+      "id": 25,
+      "question": "What are the two main research directions for attentional interfaces in classic DL architectures?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "The two main research directions for attentional interfaces in classic DL architectures are attentional interfaces and end-to-end attention."
+    },
+    {
+      "id": 26,
+      "question": "In the transformer block, what are the two stages of processing applied to the input data?",
+      "passed": true,
+      "reason": "Answered with 2 citations.",
+      "answer": "The two stages of processing applied to the input data in the transformer block are: 1) refining each feature independently according to relationships between tokens across the sequence, and 2) refining the features representing each token using a multi-layer perceptron (MLP)."
+    },
+    {
+      "id": 27,
+      "question": "Why are residual connections used in the transformer block?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "Residual connections are used in the transformer block to produce a more stable model that trains more easily."
+    },
+    {
+      "id": 28,
+      "question": "What is the purpose of Layer Normalization in transformers?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "The purpose of Layer Normalization in transformers is to stabilize learning by normalizing each token separately, removing the mean and dividing by the standard deviation."
+    },
+    {
+      "id": 29,
+      "question": "How are image patches processed before being fed into a vision transformer?",
+      "passed": false,
+      "reason": "Failed to answer. Status: refused | Msg: I don't have enough information in the provided documents to answer that.",
+      "answer": ""
+    },
+    {
+      "id": 30,
+      "question": "In auto-regressive language modelling, how is the attention matrix masked?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "In auto-regressive language modelling, the attention matrix is masked so that it is upper-triangular, meaning A = 0 when n > n'. This ensures that the representation of each word only depends on the previous words."
+    },
+    {
+      "id": 31,
+      "question": "What is the computational complexity of multi-head self-attention with respect to sequence length?",
+      "passed": false,
+      "reason": "Failed to answer. Status: refused | Msg: I don't have enough information in the provided documents to answer that.",
+      "answer": ""
+    },
+    {
+      "id": 32,
+      "question": "How does the transformer handle the lack of inherent positional information?",
+      "passed": true,
+      "reason": "Answered with 3 citations.",
+      "answer": "The transformer handles the lack of inherent positional information by adding positional encodings to the input embeddings."
+    },
+    {
+      "id": 33,
+      "question": "Why are queries and keys generated using different linear transformations instead of a symmetric dot product?",
+      "passed": false,
+      "reason": "Failed to answer. Status: refused | Msg: I don't have enough information in the provided documents to answer that.",
+      "answer": ""
+    },
+    {
+      "id": 34,
+      "question": "What is the purpose of the fixed learned token added at the start of the input sequence in image classification transformers?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "The purpose of the fixed learned token added at the start of the input sequence in image classification transformers is to maintain and refine a global representation of the sequence at each layer of the transformer that is appropriate for classification."
+    },
+    {
+      "id": 35,
+      "question": "What does the term 'token normalisation' refer to in the context of transformers?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "Token normalisation refers to the use of normalisation techniques such as LayerNorm and BatchNorm in transformers to prevent feature representations from blowing up in magnitude as non-linearities are repeatedly applied through neural networks."
+    },
+    {
+      "id": 36,
+      "question": "What are the two principal categories of efficient attention mechanisms for LLMs?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "The two principal categories of efficient attention mechanisms for LLMs are Linear Attention and Sparse Attention."
+    },
+    {
+      "id": 37,
+      "question": "How does Kernelized Linear Attention reduce the computational complexity of attention?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "Kernelized Linear Attention reduces the computational complexity of attention by approximating the softmax kernel with a simple dot-product in an induced feature space."
+    },
+    {
+      "id": 38,
+      "question": "What is the key difference between Data-Independent and Data-Dependent decay in linear attention?",
+      "passed": false,
+      "reason": "Failed to answer. Status: refused | Msg: I don't have enough information in the provided documents to answer that.",
+      "answer": ""
+    },
+    {
+      "id": 39,
+      "question": "How does RetNet's retention mechanism achieve O(1) memory updates?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "RetNet's retention mechanism achieves O(1) memory updates by using a fixed decay parameter \u03b3, which allows for an O(1) memory update like an RNN while still allowing parallel computation during training via an equivalent matrix formulation."
+    },
+    {
+      "id": 40,
+      "question": "What problem does Mamba solve compared to RetNet?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "Mamba endows the state decay rates with input dependence, whereas RetNet uses a data-independent decay."
+    },
+    {
+      "id": 41,
+      "question": "What is the primary computational focus of Sparse Attention compared to Linear Attention?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "Sparse Attention primarily focuses on accelerating the generation phase by reducing the number of attended tokens, whereas Linear Attention aims to reduce memory footprint through linear operations."
+    },
+    {
+      "id": 42,
+      "question": "What are 'attention sinks' in the context of StreamingLLM?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "In the context of StreamingLLM, 'attention sinks' refer to a large amount of attention score allocated to initial tokens in the input sequence."
+    },
+    {
+      "id": 43,
+      "question": "Why is Block Sparse Attention preferred over token-level dynamic selection?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "Block Sparse Attention is preferred over token-level dynamic selection because it provides the necessary adaptability to focus on task-relevant context while maintaining block-aligned memory access, which allows models to leverage high-performance primitives and effectively balance algorithmic expressiveness with system-level efficiency."
+    },
+    {
+      "id": 44,
+      "question": "How does the Quest algorithm approximate the criticality of a block during decoding?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "The Quest algorithm approximates the criticality of a block during decoding by dynamically selecting a subset of K, V vectors that contain the most critical tokens for each decoding step."
+    },
+    {
+      "id": 45,
+      "question": "What are the three branches of the Native Sparse Attention (NSA) mechanism?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "The three branches of the Native Sparse Attention (NSA) mechanism are compression, selection, and sliding window strategies."
+    },
+    {
+      "id": 46,
+      "question": "What is the main takeaway regarding the superiority of hybrid attention models?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "Hybrid attention models can match or exceed dense models using fewer attention computations."
+    },
+    {
+      "id": 47,
+      "question": "What is the role of weight decay in models like Gated DeltaNet and Titans?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "Weight decay in models like Gated DeltaNet and Titans serves as a learned forget gate to limit the influence of very old or noisy data."
+    },
+    {
+      "id": 48,
+      "question": "How does the cosFormer model approximate the softmax function?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "cosFormer decomposes the cosine re-weighted attention into a linear attention form."
+    },
+    {
+      "id": 49,
+      "question": "What system-level design choice is made in NSA and InfLLM-v2 to reduce memory access?",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "NSA and InfLLM-v2 force sharing of selected blocks among query groups by conducting pooling on block-level importance score within query groups to reduce memory access."
+    },
+    {
+      "id": 50,
+      "question": "Give an example of a hybrid LLM mentioned in the text that interleaves linear and full attention layers.",
+      "passed": true,
+      "reason": "Answered with 1 citations.",
+      "answer": "Jamba and MiniMax-01 are examples of hybrid LLMs that interleave linear and full attention layers."
+    },
+    {
+      "id": 51,
+      "question": "What is the exact release date of the movie Transformers: Rise of the Beasts?",
+      "passed": true,
+      "reason": "Correctly refused",
+      "answer": ""
+    },
+    {
+      "id": 52,
+      "question": "How do I install the Hugging Face transformers Python library?",
+      "passed": true,
+      "reason": "Correctly refused",
+      "answer": ""
+    },
+    {
+      "id": 53,
+      "question": "What is the capital of France?",
+      "passed": true,
+      "reason": "Correctly refused",
+      "answer": ""
+    },
+    {
+      "id": 54,
+      "question": "Can you summarize the plot of the book Harry Potter and the Sorcerer's Stone?",
+      "passed": true,
+      "reason": "Correctly refused",
+      "answer": ""
+    },
+    {
+      "id": 55,
+      "question": "Who won the FIFA World Cup in 2022?",
+      "passed": true,
+      "reason": "Correctly refused",
+      "answer": ""
+    },
+    {
+      "id": 56,
+      "question": "What is the current stock price of Google (Alphabet)?",
+      "passed": true,
+      "reason": "Correctly refused",
+      "answer": ""
+    },
+    {
+      "id": 57,
+      "question": "What is the recipe for a Margherita pizza?",
+      "passed": true,
+      "reason": "Correctly refused",
+      "answer": ""
+    },
+    {
+      "id": 58,
+      "question": "How many parameters does GPT-4 have?",
+      "passed": true,
+      "reason": "Correctly refused",
+      "answer": ""
+    },
+    {
+      "id": 59,
+      "question": "What is the best restaurant in New York City according to Michelin?",
+      "passed": true,
+      "reason": "Correctly refused",
+      "answer": ""
+    },
+    {
+      "id": 60,
+      "question": "What is the exact mathematical formula for the Adam optimizer?",
+      "passed": true,
+      "reason": "Correctly refused",
+      "answer": ""
+    }
+  ]
+}

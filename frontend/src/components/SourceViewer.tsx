@@ -59,7 +59,7 @@ export const SourceViewer: React.FC = () => {
 
       {/* Main Document Container */}
       <div className="flex-1 overflow-y-auto p-6 flex justify-center">
-        <div className="w-full max-w-2xl bg-white border border-[#dcc1b8] rounded-lg p-8 shadow-xs flex flex-col min-h-[600px]">
+        <div className="w-full max-w-2xl bg-white border border-[#dcc1b8] rounded-lg p-8 shadow-xs flex flex-col min-h-[600px] overflow-auto">
 
           {/* No citation selected */}
           {!activeCitation && (

@@ -61,6 +61,11 @@ async def ingest(
     from app.ingest.chunker import chunk_document
     from app.ingest.store import add_chunks
     from app.query.bm25_retriever import invalidate_index
+    import time
+
+    # Always ensure we have a real session_id so chunks and response are consistent
+    if not session_id:
+        session_id = f"session_{int(time.time() * 1000)}"
 
     results: List[IngestDocumentResult] = []
 

@@ -8,7 +8,7 @@ export const MainLayout: React.FC = () => {
     <div className="h-screen w-screen overflow-hidden bg-[#fcf9f6]">
       <Group orientation="horizontal" className="h-full w-full">
         {/* Left Panel: Chat Pane (~40% initial size) */}
-        <Panel defaultSize={40} minSize={30} maxSize={60}>
+        <Panel defaultSize={"70"}>
           <ChatPane />
         </Panel>
 
@@ -18,7 +18,7 @@ export const MainLayout: React.FC = () => {
         </Separator>
 
         {/* Right Panel: Source Viewer (~60% initial size) */}
-        <Panel defaultSize={60} minSize={40}>
+        <Panel defaultSize={"30"}>
           <SourceViewer />
         </Panel>
       </Group>

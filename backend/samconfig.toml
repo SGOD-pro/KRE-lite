@@ -1,10 +1,14 @@
 version = 0.1
 
 [default.deploy.parameters]
-stack_name = "cited-or-silent-backend"
+stack_name = "kre-lite"
 resolve_s3 = true
-s3_prefix = "cited-or-silent-backend"
-region = "ap-south-1"
-confirm_changeset = false
+s3_prefix = "kre-lite"
+confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
 image_repositories = []
+profile = "aws"
+parameter_overrides = "TitanEmbedModelId=\"amazon.titan-embed-text-v2:0\" NovaLlmModelId=\"amazon.nova-pro-v1:0\" S3BucketName=\"cited-or-silent-docs\" MongoDbName=\"cited_or_silent\""
+
+[default.global.parameters]
+region = "ap-south-1"

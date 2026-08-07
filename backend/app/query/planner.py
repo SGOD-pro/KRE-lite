@@ -42,14 +42,35 @@ def answer_question(question: str, session_id: str | None = None) -> dict[str, A
             "message": REFUSAL_MESSAGE,
         }
 
+    print(f"\n[QUERY] Starting query pipeline for session: {session_id}")
+    print(f"[QUERY] Question: {clean_question!r}")
+    
     # ── 1. Retrieval (Hybrid Vector + BM25) ──────────────────────────────────
-    vector_results = vector_search(clean_question, top_k=20, session_id=session_id)
-    bm25_results = bm25_search(clean_question, top_k=20, session_id=session_id)
+    # Always search globally so partial/mismatched sessions never miss an answer.
+    # If a session_id is provided, also search session-specifically and merge results.
+    # Session chunks get naturally boosted by RRF (they appear in both lists).
+    vector_global  = vector_search(clean_question, top_k=20, session_id=None)
+    bm25_global    = bm25_search(clean_question,   top_k=20, session_id=None)
+    
+    all_result_lists = [bm25_global, vector_global]
+    
+    if session_id:
+        vector_session = vector_search(clean_question, top_k=10, session_id=session_id)
+        bm25_session   = bm25_search(clean_question,   top_k=10, session_id=session_id)
+        if vector_session:
+            all_result_lists.append(vector_session)
+        if bm25_session:
+            all_result_lists.append(bm25_session)
+        print(f"[QUERY] Session '{session_id}': vector={len(vector_session)}, bm25={len(bm25_session)}")
+    
+    print(f"[QUERY] Global: vector={len(vector_global)}, bm25={len(bm25_global)}")
 
     # ── 2. Fusion ───────────────────────────────────────────────────────────
-    fused_chunks_list = reciprocal_rank_fusion([bm25_results, vector_results], top_k=5)
+    fused_chunks_list = reciprocal_rank_fusion(all_result_lists, top_k=15)
+    print(f"[QUERY] Rank fusion selected {len(fused_chunks_list)} chunks")
 
     if not fused_chunks_list:
+        print("[QUERY] REFUSAL: No chunks found during retrieval/fusion.")
         return {
             "status": "refused",
             "reason": "no_grounded_answer",
@@ -75,6 +96,7 @@ def answer_question(question: str, session_id: str | None = None) -> dict[str, A
                 }
 
     if not context_chunks_by_page:
+        print("[QUERY] REFUSAL: Context chunks by page is empty.")
         return {
             "status": "refused",
             "reason": "no_grounded_answer",
@@ -82,9 +104,22 @@ def answer_question(question: str, session_id: str | None = None) -> dict[str, A
         }
 
     # ── 3. LLM Structured Generation (Single Call) ──────────────────────────
+    print(f"[QUERY] Sending {len(context_chunks_by_page)} pages of context to LLM...")
     llm_output = generate_answer(clean_question, context_chunks=context_chunks_by_page)
+    
+    # DEBUG: Show exactly what the LLM returned
+    answer_draft = llm_output.get("answer_draft", "")
+    llm_citations = llm_output.get("citations", [])
+    print(f"[QUERY] LLM answer_draft: {answer_draft[:200]!r}")
+    print(f"[QUERY] LLM citations count: {len(llm_citations)}")
+    for i, c in enumerate(llm_citations):
+        print(f"[QUERY]   cite[{i}]: page={c.get('page')}, section={c.get('section','')[:40]!r}, quote={c.get('quote','')[:80]!r}")
 
     # ── 4. Deterministic Citation Verification ──────────────────────────────
     final_output = verify_citations(llm_output, context_chunks_by_page, question=clean_question)
+    print(f"[QUERY] Final output status: {final_output.get('status')}")
+    
+    if final_output.get("status") == "refused":
+        print(f"[QUERY] REFUSAL REASON: {final_output.get('message')}")
 
     return final_output

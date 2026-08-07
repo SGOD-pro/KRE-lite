@@ -18,6 +18,7 @@ from typing import Any, List
 # Module-level cache for the BM25 index and associated chunks
 _bm25_index = None
 _indexed_chunks: List[dict[str, Any]] = []
+_indexed_session: str | None = "__UNSET__"  # sentinel so first call always builds
 
 
 def _tokenize(text: str) -> List[str]:
@@ -27,7 +28,7 @@ def _tokenize(text: str) -> List[str]:
 
 def _build_index(session_id: str | None = None) -> None:
     """Build (or rebuild) the BM25 index from all chunks in the store."""
-    global _bm25_index, _indexed_chunks
+    global _bm25_index, _indexed_chunks, _indexed_session
 
     from rank_bm25 import BM25Okapi
     from app.ingest.store import get_all_chunks
@@ -36,12 +37,14 @@ def _build_index(session_id: str | None = None) -> None:
     if not all_chunks:
         _bm25_index = None
         _indexed_chunks = []
+        _indexed_session = session_id
         return
 
     tokenized_corpus = [_tokenize(c["text"]) for c in all_chunks]
     _bm25_index = BM25Okapi(tokenized_corpus)
     _indexed_chunks = all_chunks
-    print(f"[bm25] Index built: {len(_indexed_chunks)} chunks")
+    _indexed_session = session_id
+    print(f"[bm25] Index built: {len(_indexed_chunks)} chunks (session={session_id!r})")
 
 
 def invalidate_index() -> None:
@@ -50,9 +53,10 @@ def invalidate_index() -> None:
     Must be called after new chunks are ingested so the next query
     rebuilds from the updated store.
     """
-    global _bm25_index, _indexed_chunks
+    global _bm25_index, _indexed_chunks, _indexed_session
     _bm25_index = None
     _indexed_chunks = []
+    _indexed_session = "__UNSET__"
 
 
 def bm25_search(
@@ -73,8 +77,8 @@ def bm25_search(
     if not query.strip():
         return []
 
-    # Build index on first call (or after invalidation)
-    if _bm25_index is None:
+    # Build index on first call, after invalidation, OR when session changes
+    if _bm25_index is None or _indexed_session != session_id:
         _build_index(session_id=session_id)
 
     if _bm25_index is None or not _indexed_chunks:

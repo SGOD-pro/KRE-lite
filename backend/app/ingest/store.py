@@ -79,7 +79,7 @@ def add_chunks(chunks: List[dict[str, Any]], session_id: str | None = None) -> N
             "page_number": chunk["page_number"],
             "section_title": chunk["section_title"],
             "text": chunk["text"],
-            "session_id": session_id or "",
+            "session_id": session_id if session_id else "",
         }
         points.append(PointStruct(id=qdrant_id, vector=embedding, payload=payload))
 

@@ -17,6 +17,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 from dotenv import load_dotenv
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Search for .env in current dir, backend/, or parent dir
 env_paths = [
@@ -38,13 +39,26 @@ LOCALSTACK_ENDPOINT = os.getenv("FLOCI_ENDPOINT", os.getenv("LOCALSTACK_ENDPOINT
 TITAN_EMBED_MODEL_ID = os.getenv("TITAN_EMBED_MODEL_ID", "amazon.titan-embed-text-v2:0")
 NOVA_LLM_MODEL_ID    = os.getenv("NOVA_LLM_MODEL_ID",    "amazon.nova-pro-v1:0")
 
+class Settings(BaseSettings):
+    mongodb_uri: str = "mongodb://localhost:27017"
+    mongodb_db: str = "cited_or_silent"
+    qdrant_endpoint: str = "http://localhost:6333"
+    qdrant_api_key: str = ""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra="ignore"
+    )
+
+settings = Settings()
+
 # ── MongoDB Atlas ──────────────────────────────────────────────────────────────
-MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-MONGODB_DB  = os.getenv("MONGODB_DB", "cited_or_silent")
+MONGODB_URI = settings.mongodb_uri
+MONGODB_DB  = settings.mongodb_db
 
 # ── Qdrant Cloud ───────────────────────────────────────────────────────────────
-QDRANT_ENDPOINT = os.getenv("QDRANT_ENDPOINT", "http://localhost:6333")
-QDRANT_API_KEY  = os.getenv("QDRANT_API_KEY", "")
+QDRANT_ENDPOINT = settings.qdrant_endpoint
+QDRANT_API_KEY  = settings.qdrant_api_key
 
 # ── AWS S3 ─────────────────────────────────────────────────────────────────────
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "cited-or-silent-docs")

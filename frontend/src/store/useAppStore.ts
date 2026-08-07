@@ -122,7 +122,11 @@ export const useAppStore = create<AppState>()(
           }
 
           const data = await response.json();
-          const sid = data.session_id || sessionId || `session_${Date.now()}`;
+          // Backend always returns a real session_id now
+          const sid = data.session_id;
+          if (!sid) {
+            throw new Error('Backend did not return a session_id. Ingest failed.');
+          }
           set({
             sessionId: sid,
             documents: data.documents,

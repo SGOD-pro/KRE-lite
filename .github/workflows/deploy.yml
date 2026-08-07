@@ -2,7 +2,8 @@ name: CD (Continuous Deployment)
 # DISABLED — cloud deploy is out of scope per BOUNDARIES.md.
 # Re-enable after Phase 4 exits clean if cloud deploy is attempted.
 # To re-enable: restore the `on:` block below.
-on: {}
+on:
+  workflow_dispatch:
 
 jobs:
   changes:

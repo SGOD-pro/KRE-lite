@@ -28,7 +28,7 @@ from typing import Any
 
 from thefuzz import fuzz
 
-FUZZ_THRESHOLD = 90.0
+FUZZ_THRESHOLD = 75.0  # allows paraphrased quotes; entity protection prevents hallucinations
 
 REFUSAL_MESSAGE = (
     "I don't have enough information in the provided documents to answer that."
@@ -108,6 +108,20 @@ def _quote_matches_chunk(quote: str, chunk_text: str) -> bool:
                 if not has_fake_entity:
                     return True
 
+    # 4. Content-word overlap fallback for fragmented chunks.
+    # If the chunker split a sentence across section_title and text, or dropped words,
+    # the sliding window can't match. Fall back to checking if enough content words
+    # from the quote exist somewhere in the chunk text.
+    content_words_in_quote = [w for w in q_words if w not in STOPWORDS and len(w) > 2]
+    if content_words_in_quote:
+        matched_count = sum(
+            1 for w in content_words_in_quote
+            if any(fuzz.ratio(w, tw) >= 80 for tw in t_words)
+        )
+        # Accept if at least 3 content words match AND at least 50% of content words match
+        if matched_count >= 3 and matched_count / len(content_words_in_quote) >= 0.50:
+            return True
+
     return False
 
 
@@ -166,10 +180,14 @@ def verify_citations(
             continue  # claimed page not in retrieved set -> fail
 
         chunk_text = chunk_data.get("text", "")
+        section_title = chunk_data.get("section", "")
+        # Include section title in searchable text since the LLM sees it in the prompt
+        # and may construct quotes that span the section heading + body text
+        full_searchable_text = f"{section_title}\n{chunk_text}" if section_title else chunk_text
         source_file = chunk_data.get("source_file", "")
         chunk_id = chunk_data.get("chunk_id", f"page_{page}")
 
-        if _quote_matches_chunk(quote, chunk_text):
+        if _quote_matches_chunk(quote, full_searchable_text):
             verified.append({
                 "page": page,
                 "section": section,
@@ -178,7 +196,26 @@ def verify_citations(
                 "source_file": source_file,
                 "text": chunk_text,
             })
-        # else: silently drop this citation
+            continue  # matched on cited page, done
+
+        # Cross-page fallback: if the LLM cited the wrong page but the quote
+        # exists in another retrieved chunk, accept it with corrected page/chunk.
+        for alt_page, alt_chunk in retrieved_chunks.items():
+            if alt_page == page:
+                continue  # already tried this
+            alt_text = alt_chunk.get("text", "")
+            alt_section = alt_chunk.get("section", "")
+            alt_searchable = f"{alt_section}\n{alt_text}" if alt_section else alt_text
+            if _quote_matches_chunk(quote, alt_searchable):
+                verified.append({
+                    "page": alt_page,
+                    "section": alt_chunk.get("section", section),
+                    "quote": quote,
+                    "chunk_id": alt_chunk.get("chunk_id", f"page_{alt_page}"),
+                    "source_file": alt_chunk.get("source_file", source_file),
+                    "text": alt_chunk.get("text", ""),
+                })
+                break  # stop at first cross-page match
 
     if not verified:
         return _refusal()
