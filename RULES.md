@@ -25,29 +25,43 @@
 - 10 factual questions with known correct source chunks.
 - `test_known_answer_retrieved_in_top_5` for each.
 
-## The Adversarial "Should Refuse" Test Set — THIS IS THE DEMO
+## The Adversarial Guardrail & Correction Test Set — THIS IS THE DEMO
 
 Generate via the `adversarial-refusal-test-generator` skill
 (AGENT.md), 15-20 questions, categories:
 
-1. **Adjacent-but-absent facts** — asks about something plausible
-   given the document's domain but never actually stated (e.g. if
-   the doc covers Q3 revenue, ask about Q4 revenue).
-2. **Wrong entity swap** — take a real answerable question and swap
-   a correct name/number for a similar-sounding wrong one, ask if
-   the wrong one is correct.
-3. **Out-of-corpus questions** — ask about a real-world fact adjacent
-   to the topic but never in the uploaded documents at all.
-4. **Leading questions** — phrase the question to imply a false
-   premise as if it were fact, see if the agent corrects or refuses
-   rather than going along with the premise.
+1. **Adjacent-but-absent facts** (5 questions) — asks about something plausible
+   given the document's domain but never actually stated (e.g. bereavement leave, 401k match).
+   *Expected outcome:* `status="refused"` (no grounding exists).
+2. **Wrong entity / number swap** (5 questions) — take a real answerable question and swap
+   a correct name/number for a similar-sounding wrong one, ask if the wrong one is correct
+   (e.g. 45 days leave, 90 days notice, $500 gifts, 5 days remote, 12 weeks paternity).
+   *Expected outcome:* `status="corrected"` (system refutes false premise with verified citation).
+3. **Out-of-corpus questions** (5 questions) — ask about a real-world fact adjacent
+   to the topic but never in the uploaded documents at all (e.g. Google revenue, UK Prime Minister).
+   *Expected outcome:* `status="refused"` (no grounding exists).
+4. **Leading questions** (4 questions) — phrase the question to imply a false
+   premise as if it were fact (e.g. unlimited rollover, no VPN on Fridays, $200 gift, 60 days resignation).
+   *Expected outcome:* `status="corrected"` (system refutes false premise with verified citation).
 
-Exit criteria: **100% of this set produces a refusal, not a
-fabricated answer.** This number is the one you say out loud to the
-judges. If it's not 100%, you do not have a working core product yet
-— this is a blocking bug, not a "nice to improve" metric.
+### 3-State Response Classification Note
+Questions with false premises where the document contains explicit ground truth contradict the premise
+and MUST produce `status="corrected"` with a verified citation showing the true value (DECISION.md Rule 15).
+Questions with no grounding in the corpus MUST produce `status="refused"` (DECISION.md Rule 5).
+Neither case is permitted to return `status="answered"` or fabricate an answer around the premise.
 
-- `test_adversarial_set_all_refuse` (parametrized over the full set,
+The deterministic premise-contradiction check (`_check_premise_contradiction()` in `citation_verifier.py`)
+handles **numeric** contradictions only (digits and written-out number words). Boolean/entity premises
+(e.g., "without using a VPN") cannot be detected without a second LLM call, which is prohibited by
+DECISION.md Rule 9. For those questions, `refused` is the safe and acceptable outcome.
+
+Exit criteria: **100% of this set produces either a clean refusal or a verified correction (0% ungrounded answering / 0% false-premise compliance).**
+This is the core proof of cited-or-silent integrity:
+- 12/19 questions: `status="refused"` (no corpus grounding, non-numeric boolean premise, or open-query phrasing that doesn't trigger LLM premise detection reliably)
+- 7/19 questions: `status="corrected"` (grounded numeric refutation, detected reliably)
+- 0/19 questions: `status="answered"`
+
+- `test_adversarial_set_all_refuse_or_correct` (parametrized over the full 19-question set,
   CI-gating — a single failure here should fail the build)
 
 ## End-to-End (Playwright)

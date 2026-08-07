@@ -13,6 +13,11 @@ Required by RULES.md:
   - test_verifier_rejects_citation_missing_page_or_section
   - test_verifier_returns_refusal_shape_when_zero_citations_survive
   - test_verifier_never_bypassed_regardless_of_llm_confidence_field
+
+New tests for 3-state response (DECISION.md Rule 15, Phase B):
+  - test_verifier_corrected_when_claim_contradicted_by_grounded_citation
+  - test_verifier_answered_when_claim_confirmed_by_grounded_citation
+  - test_verifier_refused_when_claim_present_but_no_grounding_at_all
 """
 import pytest
 from app.query.citation_verifier import verify_citations
@@ -49,9 +54,12 @@ CHUNKS = {
 }
 
 
-def _llm_out(answer: str, citations: list) -> dict:
+def _llm_out(answer: str, citations: list, premise_check: dict | None = None) -> dict:
     """Helper to build fake LLM structured output."""
-    return {"answer_draft": answer, "citations": citations}
+    out = {"answer_draft": answer, "citations": citations}
+    if premise_check is not None:
+        out["premise_check"] = premise_check
+    return out
 
 
 # ── RULES.md Required tests ───────────────────────────────────────────────────
@@ -259,3 +267,83 @@ def test_verifier_answered_shape_has_required_fields():
     assert "quote" in c
     assert "chunk_id" in c
     assert "source_file" in c
+
+
+# ── Phase B: 3-State Response Tests (DECISION.md Rule 15) ────────────────────
+
+def test_verifier_corrected_when_claim_contradicted_by_grounded_citation():
+    """
+    DECISION.md Rule 15: If the LLM flags contains_claim=True and the verified
+    citation quote contains a DIFFERENT numeric value than claimed, the response
+    MUST be status='corrected' — never status='answered'.
+
+    Scenario: Question claims "5 days per week" remote work; corpus says "3 days per week".
+    """
+    llm_output = _llm_out(
+        answer="The document states employees may work remotely up to 3 days per week, not 5.",
+        citations=[{
+            "page": 3,
+            "section": "Section 2: Remote Work Policy",
+            "quote": "Employees may work remotely for up to three days per week.",
+        }],
+        premise_check={"contains_claim": True, "claimed_value": "5 days per week"},
+    )
+    result = verify_citations(llm_output, CHUNKS)
+    assert result["status"] == "corrected", (
+        f"Expected 'corrected' when grounded citation contradicts claimed '5 days'; "
+        f"got '{result.get('status')}'. Full result: {result}"
+    )
+    assert "premise_claimed" in result
+    assert "actual_grounded_value" in result
+    assert "citations" in result and len(result["citations"]) >= 1
+    assert "explanation" in result
+    # The premise_claimed must echo what was flagged in premise_check
+    assert result["premise_claimed"] == "5 days per week"
+
+
+def test_verifier_answered_when_claim_confirmed_by_grounded_citation():
+    """
+    DECISION.md Rule 15: If the LLM flags contains_claim=True but the verified
+    citation CONFIRMS (same numeric value) the claimed value, the response is
+    a normal status='answered' — the premise was correct.
+
+    Scenario: Question correctly states "3 days per week" remote work; citation confirms.
+    """
+    llm_output = _llm_out(
+        answer="Yes, employees may work remotely up to 3 days per week with manager approval.",
+        citations=[{
+            "page": 3,
+            "section": "Section 2: Remote Work Policy",
+            "quote": "Employees may work remotely for up to three days per week.",
+        }],
+        premise_check={"contains_claim": True, "claimed_value": "3 days per week"},
+    )
+    result = verify_citations(llm_output, CHUNKS)
+    assert result["status"] == "answered", (
+        f"Expected 'answered' when grounded citation CONFIRMS claimed '3 days'; "
+        f"got '{result.get('status')}'. Full result: {result}"
+    )
+    assert "answer" in result
+    assert "citations" in result
+
+
+def test_verifier_refused_when_claim_present_but_no_grounding_at_all():
+    """
+    DECISION.md Rule 15 + Rule 5: If the LLM flags contains_claim=True but
+    returns no citations (or all citations fail verification), the response
+    MUST be status='refused' — the claim cannot be verified OR refuted.
+
+    Scenario: Question claims "401k match 6%" — topic not in corpus at all.
+    """
+    llm_output = _llm_out(
+        answer="I don't have enough information in the provided documents to answer that.",
+        citations=[],  # LLM correctly returned no citations
+        premise_check={"contains_claim": True, "claimed_value": "6%"},
+    )
+    result = verify_citations(llm_output, CHUNKS)
+    assert result["status"] == "refused", (
+        f"Expected 'refused' when premise is claimed but no grounding exists; "
+        f"got '{result.get('status')}'. Full result: {result}"
+    )
+    assert result["reason"] == "no_grounded_answer"
+    assert "message" in result

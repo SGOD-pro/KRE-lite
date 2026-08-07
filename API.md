@@ -67,13 +67,31 @@ and test the PDF path in 48 hours — see BOUNDARIES.md).
 }
 ```
 
-Note: `status` is always one of exactly two values. The frontend
-branches on this field, not on whether `citations` is empty — the
-API contract makes refusal a first-class response shape, not an
-edge case the client has to infer (DECISION.md Rule 5, AGENT.md).
+**Response — corrected case (false premise refuted by verified citation):**
+```json
+{
+  "status": "corrected",
+  "premise_claimed": "5 days per week",
+  "actual_grounded_value": "up to 3 days per week",
+  "explanation": "Employees may work remotely up to 3 days per week, subject to manager approval.",
+  "citations": [
+    {
+      "page": 3,
+      "section": "Section 2 — Remote Work Policy",
+      "quote": "Employees may work remotely up to 3 days per week, subject to manager approval.",
+      "chunk_id": "sample_doc_p0003_c0002"
+    }
+  ]
+}
+```
 
-  - `400` — empty question, or missing/empty `session_id`
-  - `503` — LLM or provider unavailable
+Note: `status` is always one of exactly three values (`"answered" | "refused" | "corrected"`).
+The frontend branches on this field — the API contract makes refusal and correction first-class
+response shapes, not edge cases the client has to infer (DECISION.md Rule 5, Rule 15, AGENT.md).
+
+**Errors:**
+- `400` — empty question, or missing/empty `session_id`
+- `503` — LLM or provider unavailable
 
 ## POST /analyze
 

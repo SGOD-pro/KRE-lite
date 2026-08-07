@@ -65,6 +65,13 @@ violated, that's a bug, not a tuning knob.
     citations for a rule = "Unable to verify" (3rd state, not
     Pass/Fail forced binary) — do not force a rule into Pass/Fail
     when no evidence found, that IS a fabrication risk.
+15. If a question's premise contradicts a verified citation, the
+    response MUST be status='corrected', explicitly stating the false
+    premise and the actual grounded value, with a citation. This is
+    NOT the same as a refusal (no grounding found) and NOT the same as
+    a plain answer (no premise conflict detected). Silently answering
+    around a false premise without flagging it (current bug) is a
+    violation of this rule as serious as a fabricated citation.
 
 ## Explicitly Deferred (not cut forever, just not in scope for 48h)
 

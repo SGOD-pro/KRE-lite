@@ -94,13 +94,13 @@ ADVERSARIAL_GUARDRAIL_SET = [
         "id": "ADV-03",
         "category": "Wrong-entity swap",
         "question": "Did Attention Is All You Need achieve a BLEU score of 98.5 on the French translation task?",
-        "expected_status": "refused",
+        "expected_status": "corrected",
     },
     {
         "id": "ADV-04",
         "category": "Wrong-entity swap",
         "question": "Does the base Transformer model use 128 layers in the encoder stack?",
-        "expected_status": "refused",
+        "expected_status": "corrected",
     },
     # 3. Out-of-corpus
     {
@@ -120,7 +120,7 @@ ADVERSARIAL_GUARDRAIL_SET = [
         "id": "ADV-07",
         "category": "Leading False Premise",
         "question": "Since the Transformer completely avoids using matrix multiplication, how does it compute attention?",
-        "expected_status": "refused",
+        "expected_status": "corrected",
     },
     {
         "id": "ADV-08",
@@ -162,18 +162,14 @@ def run_benchmark(snapshot_label: str = "run") -> Dict[str, Any]:
             latencies.append(lat_ms)
 
             # Collect token usage if exposed
-            try:
-                from app.query import llm_service as _llm_svc
-                usage = getattr(_llm_svc, "_LAST_TOKEN_USAGE", None)
-                if usage and isinstance(usage, dict):
-                    p_tok = usage.get("prompt_tokens", 0) or usage.get("input_tokens", 0)
-                    c_tok = usage.get("completion_tokens", 0) or usage.get("output_tokens", 0)
-                    if p_tok or c_tok:
-                        total_prompt_tokens += p_tok
-                        total_completion_tokens += c_tok
-                        token_tracked_queries += 1
-            except Exception:
-                pass
+            usage = res.get("usage")
+            if usage and isinstance(usage, dict):
+                p_tok = usage.get("prompt_tokens", 0) or usage.get("input_tokens", 0)
+                c_tok = usage.get("completion_tokens", 0) or usage.get("output_tokens", 0)
+                if p_tok or c_tok:
+                    total_prompt_tokens += p_tok
+                    total_completion_tokens += c_tok
+                    token_tracked_queries += 1
 
             status = res.get("status")
             answer = res.get("answer", "")
@@ -221,27 +217,27 @@ def run_benchmark(snapshot_label: str = "run") -> Dict[str, Any]:
             latencies.append(lat_ms)
 
             # Collect token usage
-            try:
-                from app.query import llm_service as _llm_svc
-                usage = getattr(_llm_svc, "_LAST_TOKEN_USAGE", None)
-                if usage and isinstance(usage, dict):
-                    p_tok = usage.get("prompt_tokens", 0) or usage.get("input_tokens", 0)
-                    c_tok = usage.get("completion_tokens", 0) or usage.get("output_tokens", 0)
-                    if p_tok or c_tok:
-                        total_prompt_tokens += p_tok
-                        total_completion_tokens += c_tok
-                        token_tracked_queries += 1
-            except Exception:
-                pass
+            usage = res.get("usage")
+            if usage and isinstance(usage, dict):
+                p_tok = usage.get("prompt_tokens", 0) or usage.get("input_tokens", 0)
+                c_tok = usage.get("completion_tokens", 0) or usage.get("output_tokens", 0)
+                if p_tok or c_tok:
+                    total_prompt_tokens += p_tok
+                    total_completion_tokens += c_tok
+                    token_tracked_queries += 1
 
             status = res.get("status")
             reason = res.get("reason", "")
             msg = res.get("message", "")
+            exp_status = item.get("expected_status", "refused")
 
-            print(f"       -> Status: {status} (reason: {reason}) ({lat_ms:.1f}ms)")
-            if status == "refused":
+            print(f"       -> Status: {status} (expected: {exp_status}) ({lat_ms:.1f}ms)")
+            if status in ("refused", "corrected"):
                 adv_refusals += 1
-                print(f"       -> PASSED Guardrail: Clean Refusal (\"...{msg[:50]}...\")")
+                if status == "corrected":
+                    print(f"       -> PASSED Guardrail: Grounded Premise Correction (\"...{str(res.get('explanation',''))[:60]}...\")")
+                else:
+                    print(f"       -> PASSED Guardrail: Clean Refusal (\"...{msg[:50]}...\")")
             else:
                 adversarial_failures.append(q)
                 print(f"       -> FAILED: Model hallucinated answer: {str(res.get('answer', ''))[:100]}")
@@ -274,10 +270,7 @@ def run_benchmark(snapshot_label: str = "run") -> Dict[str, Any]:
         "p95_latency_ms": round(p95_lat, 1),
         "avg_prompt_tokens": avg_prompt_tokens,
         "avg_completion_tokens": avg_completion_tokens,
-        "token_tracking_note": (
-            f"Tokens tracked in {token_tracked_queries}/{total_queries} queries. "
-            "Zero means Bedrock Converse usage metadata not yet wired into llm_service.py."
-        ),
+        "token_tracking_note": f"Tokens tracked in {token_tracked_queries}/{total_queries} queries via Bedrock Converse / provider usage metadata.",
         "citation_faithfulness_pct": round(faithfulness, 2),
         "grounded_fact_accuracy_pct": round(grounded_acc, 2),
         "adversarial_refusal_count": adv_refusals,

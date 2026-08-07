@@ -8,7 +8,11 @@ ARCHITECTURE.md design:
      with content-word verification to prevent entity-swap hallucinations).
   3. PASS -> citation kept, enriched with chunk_id + source_file.
   4. FAIL -> citation dropped.
-  Output: >=1 survived -> answered; 0 survived -> refusal.
+  Output: >=1 survived:
+    - If premise_check.contains_claim=True and verified quote CONTRADICTS the claimed
+      value -> status="corrected" (DECISION.md Rule 15, API.md shape).
+    - Otherwise -> status="answered".
+  0 survived: -> status="refused".
 
 This is pure deterministic code — NO second LLM call (DECISION.md Rules 4 & 9).
 The verifier has no bypass flag, no "trust mode" (DECISION.md Rule 4).
@@ -18,7 +22,11 @@ Retrieved chunks format (the source of truth passed in from planner.py):
   { page_number (int): {section, text, source_file, chunk_id} }
 
 LLM structured output format (from API.md "Internal Contract"):
-  { answer_draft: str, citations: [{page: int, section: str, quote: str}] }
+  {
+    "answer_draft": str,
+    "citations": [{"page": int, "section": str, "quote": str}],
+    "premise_check": {"contains_claim": bool, "claimed_value": str|null}
+  }
   Note: the LLM does NOT return chunk_id — that comes from the store lookup.
 """
 from __future__ import annotations
@@ -138,6 +146,110 @@ def _quote_matches_chunk(quote: str, chunk_text: str) -> bool:
     return False
 
 
+def _extract_numeric_tokens(text: str) -> list[str]:
+    """
+    Extract all numeric tokens from text: digits (e.g. "3", "500") and
+    written-out number words (e.g. "three", "fifty"). Used to compare
+    claimed values against verified quote text for premise contradiction.
+    Returns a list of normalized strings.
+    """
+    NUMBER_WORD_MAP = {
+        "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
+        "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9",
+        "ten": "10", "eleven": "11", "twelve": "12", "thirteen": "13",
+        "fourteen": "14", "fifteen": "15", "sixteen": "16", "seventeen": "17",
+        "eighteen": "18", "nineteen": "19", "twenty": "20", "thirty": "30",
+        "forty": "40", "fifty": "50", "sixty": "60", "seventy": "70",
+        "eighty": "80", "ninety": "90",
+    }
+    t = text.lower()
+    tokens: list[str] = []
+    # Digit sequences with optional $ prefix
+    tokens += re.findall(r"\$?\d+(?:\.\d+)?", t)
+    # Written-out number words
+    for word, digit in NUMBER_WORD_MAP.items():
+        if re.search(r"\b" + word + r"\b", t):
+            tokens.append(digit)
+    return tokens
+
+
+def _check_premise_contradiction(
+    claimed_value: str,
+    verified_citations: list[dict[str, Any]],
+) -> tuple[bool, str | None]:
+    """
+    Deterministic check: does any verified citation's quote contain a numeric/entity
+    value that CONTRADICTS the claimed_value from the question's premise?
+
+    Returns:
+        (contradicted: bool, actual_grounded_value: str | None)
+        - contradicted=True if:
+          a) The verified quote contains a DIFFERENT numeric value than claimed, or
+          b) The claimed value is 'unlimited'/'no limit' but the quote contains any
+             finite number (i.e., any specific limit contradicts an unlimited claim).
+        - actual_grounded_value: the value found in the citation (for the response).
+
+    This is purely lexical/numeric — no LLM call (DECISION.md Rule 9).
+    """
+    if not claimed_value:
+        return False, None
+
+    claimed_norm = _normalize(claimed_value)
+
+    # Special case: claimed value is 'unlimited' / 'no limit' / 'unrestricted' etc.
+    # Any verified citation that contains a finite number contradicts this claim.
+    UNLIMITED_WORDS = {"unlimited", "no limit", "no maximum", "unrestricted", "indefinitely"}
+    claimed_is_unlimited = any(uw in claimed_norm for uw in UNLIMITED_WORDS)
+    if claimed_is_unlimited:
+        for cit in verified_citations:
+            quote = cit.get("quote", "")
+            if not quote:
+                continue
+            quote_nums = _extract_numeric_tokens(quote)
+            if quote_nums:
+                # Found a finite number in the citation — contradicts the 'unlimited' claim
+                return True, quote_nums[0]
+        return False, None
+
+    # Standard numeric comparison
+    claimed_nums = _extract_numeric_tokens(claimed_norm)
+    if not claimed_nums:
+        # No numeric tokens in the claimed value — can't do numeric contradiction check.
+        # Fall through to answered (the LLM still provided a verified citation).
+        return False, None
+
+    # Check each verified citation's quote
+    for cit in verified_citations:
+        quote = cit.get("quote", "")
+        if not quote:
+            continue
+        quote_nums = _extract_numeric_tokens(quote)
+        if not quote_nums:
+            continue
+
+        # Find the primary numeric from the claimed value (first one, ignoring "$" prefix)
+        claimed_primary = claimed_nums[0].lstrip("$")
+        try:
+            claimed_val_float = float(claimed_primary)
+        except ValueError:
+            continue
+
+        # Check if any numeric in the quote differs meaningfully from claimed
+        for qn in quote_nums:
+            qn_clean = qn.lstrip("$")
+            try:
+                quote_val_float = float(qn_clean)
+            except ValueError:
+                continue
+
+            # Values are different — this is a contradiction
+            if abs(claimed_val_float - quote_val_float) > 0.001:
+                # Return the first differing value as the grounded actual
+                return True, qn
+
+    return False, None
+
+
 def verify_citations(
     llm_output: dict[str, Any],
     retrieved_chunks: dict[int, dict[str, Any]],
@@ -147,24 +259,45 @@ def verify_citations(
     Deterministically verifies LLM citations against retrieved context chunks.
 
     Args:
-        llm_output: dict with "answer_draft" (str) and "citations" (list of dicts).
+        llm_output: dict with:
+          - "answer_draft" (str)
+          - "citations" (list of dicts)
+          - "premise_check" (dict: {"contains_claim": bool, "claimed_value": str|None})
         retrieved_chunks: dict keyed by page_number (int).
                           Each value: {section, text, source_file, chunk_id}.
-        question: Optional user query string to guard against unsupported entity refutations.
+        question: Optional user query string for legacy guardrail checks.
 
-    Returns API.md-compliant shape:
-        Answered:  {"status": "answered", "answer": str, "citations": [...]}
-        Refused:   {"status": "refused", "reason": "no_grounded_answer", "message": str}
+    Returns API.md-compliant shape (one of three states per DECISION.md Rule 15):
+        Answered:   {"status": "answered", "answer": str, "citations": [...]}
+        Refused:    {"status": "refused", "reason": "no_grounded_answer", "message": str}
+        Corrected:  {
+                      "status": "corrected",
+                      "premise_claimed": str,
+                      "actual_grounded_value": str,
+                      "explanation": str,
+                      "citations": [...]
+                    }
     """
     answer_draft = llm_output.get("answer_draft", "")
     raw_citations = llm_output.get("citations", [])
 
+    # Extract premise_check metadata from LLM output
+    pc = llm_output.get("premise_check") or {}
+    contains_claim = bool(pc.get("contains_claim", False)) if isinstance(pc, dict) else False
+    claimed_value: str | None = pc.get("claimed_value") if isinstance(pc, dict) else None
+
+    usage = llm_output.get("usage")
+
     # No citations returned by LLM -> immediate refusal
     if not raw_citations:
-        return _refusal()
+        return _refusal(usage=usage)
 
-    # Rule 6 guard: Refusal triggers for adversarial / false-premise questions
-    if question:
+    # ── Legacy Rule 6 guard (kept as a safety net for when premise_check is absent) ──
+    # When the LLM DID flag a premise claim (contains_claim=True), we trust the
+    # citation verification path to enforce the correct state (corrected/answered/refused).
+    # The legacy guard is only activated when premise_check was absent or contains_claim=False
+    # — e.g., when using an older provider that doesn't return the new field.
+    if not contains_claim and question:
         q_lower = question.lower().strip()
         all_chunks_text = " ".join(
             f"{c.get('section', '')} {c.get('text', '')}"
@@ -209,6 +342,7 @@ def verify_citations(
                 if not re.search(r"\b" + re.escape(np_phrase) + r"\b", all_chunks_text):
                     return _refusal()
 
+    # ── Citation verification pass ──────────────────────────────────────────────
     verified: list[dict[str, Any]] = []
     seen_cites: set[tuple[int, str]] = set()
 
@@ -275,19 +409,61 @@ def verify_citations(
                 break  # stop at first cross-page match
 
     if not verified:
-        return _refusal()
+        return _refusal(usage=usage)
 
-    return {
+    # ── Premise contradiction check (DECISION.md Rule 15) ──────────────────────
+    # If the LLM flagged a contains_claim AND we have a verified citation, check
+    # whether that citation's quote contradicts the claimed_value.
+    # This is the enforcement point — the prompt alone is not sufficient.
+    if contains_claim and claimed_value:
+        contradicted, actual_grounded = _check_premise_contradiction(claimed_value, verified)
+        if contradicted and actual_grounded:
+            # Confirmed false premise with grounded refutation -> "corrected"
+            res = {
+                "status": "corrected",
+                "premise_claimed": claimed_value,
+                "actual_grounded_value": actual_grounded,
+                "explanation": answer_draft,
+                "citations": verified,
+            }
+            if usage:
+                res["usage"] = usage
+            return res
+        # _check_premise_contradiction returned False — either:
+        # (a) The claimed value is numerically confirmed by the citation (claim was correct) -> answered
+        # (b) The claim is non-numeric/boolean and we cannot deterministically verify it
+        #     without a second LLM call (prohibited by DECISION.md Rule 9) -> refused (safer)
+        #
+        # Distinguish (a) from (b): if the citation actually contains the same numeric value
+        # as the claimed value, the claim was confirmed -> "answered". Otherwise -> "refused".
+        claimed_nums = _extract_numeric_tokens(claimed_value)
+        if claimed_nums:
+            # There were numeric tokens; contradiction check already ran and found no diff.
+            # That means the citation CONFIRMED the numeric claim -> "answered"
+            pass  # fall through to answered below
+        else:
+            # No numeric tokens in claimed_value and no 'unlimited'-type keyword match.
+            # This is a non-numeric boolean/entity premise — cannot verify without a 2nd LLM call.
+            # Safer to refuse than to let through as "answered" (DECISION.md Rule 9).
+            return _refusal(usage=usage)
+
+    res = {
         "status": "answered",
         "answer": answer_draft,
         "citations": verified,
     }
+    if usage:
+        res["usage"] = usage
+    return res
 
 
-def _refusal() -> dict[str, Any]:
+def _refusal(usage: dict[str, Any] | None = None) -> dict[str, Any]:
     """Returns the exact API.md refusal shape (DECISION.md Rule 5)."""
-    return {
+    res = {
         "status": "refused",
         "reason": "no_grounded_answer",
         "message": REFUSAL_MESSAGE,
     }
+    if usage:
+        res["usage"] = usage
+    return res

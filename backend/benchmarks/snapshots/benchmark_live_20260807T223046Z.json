@@ -1,0 +1,39 @@
+{
+  "timestamp": "2026-08-07T22:30:46Z",
+  "snapshot_label": "benchmark_live",
+  "avg_latency_ms": 2500.3,
+  "p95_latency_ms": 2616.8,
+  "avg_prompt_tokens": 0,
+  "avg_completion_tokens": 0,
+  "token_tracking_note": "Tokens tracked in 0/13 queries via Bedrock Converse / provider usage metadata.",
+  "citation_faithfulness_pct": 0.0,
+  "grounded_fact_accuracy_pct": 0.0,
+  "adversarial_refusal_count": 4,
+  "adversarial_refusal_total": 8,
+  "adversarial_failures": [],
+  "benchmark_summary": {
+    "total_queries_evaluated": 13,
+    "grounded_accuracy_pct": 0.0,
+    "adversarial_guardrail_refusal_pct": 50.0,
+    "citation_faithfulness_pct": 0.0,
+    "hallucination_rate_pct": 50.0,
+    "system_error_rate_pct": 53.85,
+    "average_latency_ms": 2500.3,
+    "p95_latency_ms": 2616.8
+  },
+  "breakdown": {
+    "grounded_queries": {
+      "total": 5,
+      "answered_with_citations": 0
+    },
+    "adversarial_guardrails": {
+      "total": 8,
+      "clean_refusals": 4,
+      "hallucinated_answers": 4
+    },
+    "citations": {
+      "total_extracted": 0,
+      "verified_faithful": 0
+    }
+  }
+}

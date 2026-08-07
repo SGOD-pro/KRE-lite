@@ -1,11 +1,11 @@
 {
-  "timestamp": "2026-08-07T22:32:32Z",
-  "snapshot_label": "benchmark_live",
-  "avg_latency_ms": 3707.1,
-  "p95_latency_ms": 10878.1,
-  "avg_prompt_tokens": 1320.9,
-  "avg_completion_tokens": 181.1,
-  "token_tracking_note": "Tokens tracked in 13/13 queries via Bedrock Converse / provider usage metadata.",
+  "timestamp": "2026-08-07T21:57:37Z",
+  "snapshot_label": "baseline",
+  "avg_latency_ms": 3606.0,
+  "p95_latency_ms": 12303.3,
+  "avg_prompt_tokens": 0,
+  "avg_completion_tokens": 0,
+  "token_tracking_note": "Tokens tracked in 0/13 queries. Zero means Bedrock Converse usage metadata not yet wired into llm_service.py.",
   "citation_faithfulness_pct": 100.0,
   "grounded_fact_accuracy_pct": 60.0,
   "adversarial_refusal_count": 8,
@@ -18,8 +18,8 @@
     "citation_faithfulness_pct": 100.0,
     "hallucination_rate_pct": 0.0,
     "system_error_rate_pct": 0.0,
-    "average_latency_ms": 3707.1,
-    "p95_latency_ms": 10878.1
+    "average_latency_ms": 3606.0,
+    "p95_latency_ms": 12303.3
   },
   "breakdown": {
     "grounded_queries": {
