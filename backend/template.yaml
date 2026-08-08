@@ -74,10 +74,6 @@ Resources:
             Path: /
             Method: ANY
 
-  # Inject CORS headers on ALL API Gateway error responses (4xx/5xx).
-  # This is critical: when Lambda crashes (502), API Gateway generates the
-  # response itself — FastAPI never runs — so no CORS headers are added.
-  # These GatewayResponse resources ensure the headers are always present.
   GatewayResponseDefault4XX:
     Type: AWS::ApiGateway::GatewayResponse
     Properties:

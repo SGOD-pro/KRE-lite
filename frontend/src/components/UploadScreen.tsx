@@ -99,6 +99,7 @@ export const UploadScreen: React.FC = () => {
     setErrorMsg(null);
     try {
       await uploadFiles(selectedFiles);
+      setSelectedFiles([]); // Clear files so UI transitions to "Start Analyzing"
     } catch (err: any) {
       setErrorMsg(err.message || 'Upload failed. Please try again.');
     }
