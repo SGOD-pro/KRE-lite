@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { Menu, Send, ShieldAlert, Bot, FileText, PlusCircle, Loader2, ArrowDown } from 'lucide-react';
+import { Plus, Send, ShieldAlert, Bot, FileText, PlusCircle, Loader2, ArrowDown } from 'lucide-react';
+import { Button } from './ui/button';
 
 // ── Simple markdown-like renderer for answer text ────────────────────────────
 // Supports: **bold**, bullet points (- / •), numbered lists (1.), line breaks
@@ -138,20 +139,22 @@ export const ChatPane: React.FC = () => {
   };
 
   return (
-    <div className="h-full w-full bg-[#f8fafc] flex flex-col border-r border-[#e2e8f0] relative font-sans overflow-hidden">
+    <div className="h-full w-full flex flex-col border-r border-border relative font-sans overflow-hidden">
       {/* Top Bar */}
-      <div className="p-4 border-b border-[#e2e8f0] flex items-center justify-between bg-white shrink-0">
-        <button
+      <div className="p-4 pl-16 border-b border-border flex items-center justify-between bg-background shrink-0">
+        <Button
           onClick={() => setCurrentView('upload')}
-          className="p-2.5 rounded-full bg-[#f1f5f9] text-[#334155] hover:bg-[#e2e8f0] transition-colors cursor-pointer"
-          title="Manage Documents"
+          // className="p-2.5 rounded-full bg-muted text-foreground hover:bg-border transition-colors cursor-pointer"
+          size='icon'
+          variant={"secondary"}
+          title="Add/Manage Documents"
         >
-          <Menu className="w-5 h-5" />
-        </button>
+          <Plus/>
+        </Button>
 
         <button
           onClick={() => resetSession()}
-          className="flex items-center gap-1.5 text-xs font-medium text-[#9a4021] bg-[#ffedd5] hover:bg-[#fed7aa] px-3.5 py-1.5 rounded-full border border-[#fdba74] transition-colors cursor-pointer"
+          className="flex items-center gap-1.5 text-xs font-medium text-primary bg-accent hover:bg-accent/80 px-3.5 py-1.5 rounded-full border border-primary/20 transition-colors cursor-pointer"
         >
           <PlusCircle className="w-3.5 h-3.5" />
           <span>New Session</span>
@@ -166,14 +169,14 @@ export const ChatPane: React.FC = () => {
         >
           <div className="space-y-5">
           {messages.length === 0 && (
-            <div className="h-full min-h-[350px] flex flex-col items-center justify-center text-center p-6 text-[#64748b]">
-              <div className="w-12 h-12 rounded-full bg-[#ffedd5] flex items-center justify-center mb-3">
-                <Bot className="w-6 h-6 text-[#9a4021]" />
+            <div className="h-full min-h-[350px] flex flex-col items-center justify-center text-center p-6 text-muted-foreground">
+              <div className="w-12 h-12 rounded-full bg-accent flex items-center justify-center mb-3">
+                <Bot className="w-6 h-6 text-primary" />
               </div>
-              <p className="font-serif text-lg font-medium text-[#0f172a] mb-1">
+              <p className="font-serif text-lg font-medium text-foreground mb-1">
                 Ask a question about your document
               </p>
-              <p className="text-xs text-[#64748b] max-w-xs">
+              <p className="text-xs text-muted-foreground max-w-xs">
                 Every claim will be anchored to exact pages and sections with zero hallucinations.
               </p>
             </div>
@@ -183,7 +186,7 @@ export const ChatPane: React.FC = () => {
             if (msg.role === 'user') {
               return (
                 <div key={msg.id} className="flex justify-end">
-                  <div className="max-w-[85%] bg-[#0f172a] text-white px-4 py-3 rounded-2xl rounded-tr-sm text-sm shadow-xs leading-relaxed">
+                  <div className="max-w-[85%] bg-foreground text-background px-4 py-3 rounded-2xl rounded-tr-sm text-sm shadow-xs leading-relaxed">
                     {msg.text}
                   </div>
                 </div>
@@ -195,12 +198,12 @@ export const ChatPane: React.FC = () => {
             if (isRefused) {
               return (
                 <div key={msg.id} data-testid="refusal-bubble" className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full bg-[#f1f5f9] border border-[#e2e8f0] flex items-center justify-center shrink-0 mt-0.5">
-                    <ShieldAlert className="w-4 h-4 text-[#64748b]" />
+                  <div className="w-8 h-8 rounded-full bg-muted border border-border flex items-center justify-center shrink-0 mt-0.5">
+                    <ShieldAlert className="w-4 h-4 text-muted-foreground" />
                   </div>
 
-                  <div className="flex-1 max-w-[90%] bg-white border border-[#e2e8f0] rounded-2xl p-4 text-sm text-[#334155] flex items-start gap-2.5 shadow-xs">
-                    <FileText className="w-4 h-4 text-[#94a3b8] shrink-0 mt-0.5" />
+                  <div className="flex-1 max-w-[90%]  border border-border rounded-2xl p-4 text-sm text-foreground flex items-start gap-2.5 shadow-xs bg-card">
+                    <FileText className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
                     <p className="leading-relaxed font-medium">
                       {msg.text}
                     </p>
@@ -212,12 +215,12 @@ export const ChatPane: React.FC = () => {
             // Verified Answer Message
             return (
               <div key={msg.id} data-testid="answer-bubble" className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-[#9a4021] text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
+                <div className="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center shrink-0 mt-0.5 shadow-xs">
                   <Bot className="w-4 h-4" />
                 </div>
 
                 <div className="flex-1 max-w-[90%] space-y-3">
-                  <div className="bg-white border border-[#e2e8f0] rounded-2xl p-4 text-sm text-[#0f172a] leading-relaxed shadow-xs">
+                  <div className="bg-card border border-border rounded-2xl p-4 text-sm text-foreground leading-relaxed shadow-xs">
                     <RichText text={msg.text} />
                   </div>
 
@@ -235,7 +238,7 @@ export const ChatPane: React.FC = () => {
                             data-testid="citation-chip"
                             onClick={() => setActiveCitation(cite)}
                             className={`citation-chip ${
-                              isActive ? 'bg-[#ffedd5] border-[#9a4021] text-[#9a4021] ring-1 ring-[#9a4021]' : ''
+                              isActive ? 'bg-accent border-[#9a4021] text-primary ring-1 ring-[#9a4021]' : ''
                             }`}
                           >
                             <FileText className="w-3.5 h-3.5" />
@@ -254,11 +257,11 @@ export const ChatPane: React.FC = () => {
 
           {isQuerying && (
             <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-full bg-[#9a4021] text-white flex items-center justify-center shrink-0">
+              <div className="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center shrink-0">
                 <Bot className="w-4 h-4 animate-bounce" />
               </div>
-              <div className="bg-white border border-[#e2e8f0] rounded-2xl px-4 py-3 text-sm text-[#475569] flex items-center gap-2 shadow-xs">
-                <Loader2 className="w-4 h-4 animate-spin text-[#9a4021]" />
+              <div className="bg-background border border-border rounded-2xl px-4 py-3 text-sm text-foreground flex items-center gap-2 shadow-xs">
+                <Loader2 className="w-4 h-4 animate-spin text-primary" />
                 <span>Verifying citations against document chunks...</span>
               </div>
             </div>
@@ -272,7 +275,7 @@ export const ChatPane: React.FC = () => {
         {showScrollBtn && (
           <button
             onClick={scrollToBottom}
-            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 w-9 h-9 rounded-full bg-white border border-[#e2e8f0] shadow-lg flex items-center justify-center text-[#64748b] hover:text-[#9a4021] hover:border-[#fdba74] transition-all cursor-pointer animate-fade-in"
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 w-9 h-9 rounded-full bg-background border border-border shadow-lg flex items-center justify-center text-muted-foreground hover:text-primary hover:border-primary/20 transition-all cursor-pointer animate-fade-in"
             title="Scroll to bottom"
           >
             <ArrowDown className="w-4.5 h-4.5" />
@@ -281,7 +284,7 @@ export const ChatPane: React.FC = () => {
       </div>
 
       {/* Bottom Input Area */}
-      <div className="p-4 border-t border-[#e2e8f0] bg-white shrink-0">
+      <div className="p-4 border-t border-border bg-background shrink-0">
         <form onSubmit={handleSend} className="relative flex items-center">
           <input
             type="text"
@@ -289,13 +292,13 @@ export const ChatPane: React.FC = () => {
             onChange={(e) => setInput(e.target.value)}
             placeholder={!sessionId ? 'Please upload documents to start...' : 'Ask a question...'}
             disabled={!sessionId || isQuerying}
-            className="w-full bg-[#f1f5f9] border border-[#e2e8f0] focus:border-[#9a4021] focus:ring-1 focus:ring-[#9a4021] rounded-full py-3.5 pl-5 pr-28 text-sm text-[#0f172a] placeholder-[#94a3b8] outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+            className="w-full bg-muted border border-border focus:border-primary focus:ring-1 focus:ring-primary rounded-full py-3.5 pl-5 pr-28 text-sm text-foreground placeholder-muted-foreground outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed"
           />
 
           <button
             type="submit"
             disabled={!sessionId || !input.trim() || isQuerying}
-            className="absolute right-1.5 top-1.5 bottom-1.5 bg-[#9a4021] hover:bg-[#b95837] text-white text-xs font-semibold px-4 rounded-full flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            className="absolute right-1.5 top-1.5 bottom-1.5 bg-primary hover:bg-primary/90 text-white text-xs font-semibold px-4 rounded-full flex items-center gap-1.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
             <span>Send</span>
             <Send className="w-3.5 h-3.5" />

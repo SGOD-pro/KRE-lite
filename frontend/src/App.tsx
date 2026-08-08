@@ -3,6 +3,7 @@ import { useAppStore } from './store/useAppStore';
 import { UploadScreen } from './components/UploadScreen';
 import { MainLayout } from './components/MainLayout';
 
+// ── App ───────────────────────────────────────────────────────────────────────
 export const App: React.FC = () => {
   const { currentView, sessionId } = useAppStore();
 

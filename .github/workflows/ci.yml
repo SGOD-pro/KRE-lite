@@ -79,3 +79,76 @@ jobs:
             exit 1
           fi
           echo "No forbidden patterns found — boundaries clean."
+
+  # ─── Deployed backend health check — runs on every CI push ─────────────────
+  #     Catches cases where the live backend drifts from what the codebase expects
+  #     (e.g. a broken deploy from a previous run, infra rot, CORS regression).
+  #     Skipped gracefully if DEPLOYED_BACKEND_URL secret is not configured.
+  backend-health-ci:
+    name: Live backend — health & CORS check
+    runs-on: ubuntu-latest
+    # Don't block merges if the secret isn't set — treat as advisory
+    continue-on-error: ${{ !secrets.DEPLOYED_BACKEND_URL }}
+    env:
+      DEPLOYED_BACKEND_URL: ${{ secrets.DEPLOYED_BACKEND_URL }}
+      DEPLOYED_FRONTEND_URL: ${{ secrets.DEPLOYED_FRONTEND_URL || 'https://kre-lite.vercel.app' }}
+
+    steps:
+      - name: Skip if no deployed URL configured
+        if: env.DEPLOYED_BACKEND_URL == ''
+        run: |
+          echo "DEPLOYED_BACKEND_URL secret not set — skipping live health check."
+          echo "Set the secret to enable this gate."
+          exit 0
+
+      - name: Health check — GET /health must return 200
+        if: env.DEPLOYED_BACKEND_URL != ''
+        run: |
+          echo "Checking ${DEPLOYED_BACKEND_URL}/health"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 30 \
+            --retry 3 \
+            --retry-delay 5 \
+            "${DEPLOYED_BACKEND_URL}/health")
+          echo "HTTP status: $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::Live backend health check FAILED — /health returned $STATUS"
+            echo "::error::The deployed backend at $DEPLOYED_BACKEND_URL is unhealthy."
+            exit 1
+          fi
+          echo "Health check PASSED (200 OK)"
+
+      - name: CORS check — OPTIONS /ingest must allow frontend origin
+        if: env.DEPLOYED_BACKEND_URL != ''
+        run: |
+          HEADERS=$(curl -s -I \
+            --max-time 15 \
+            -X OPTIONS \
+            -H "Origin: ${DEPLOYED_FRONTEND_URL}" \
+            -H "Access-Control-Request-Method: POST" \
+            -H "Access-Control-Request-Headers: content-type" \
+            "${DEPLOYED_BACKEND_URL}/ingest")
+          echo "$HEADERS"
+          if ! echo "$HEADERS" | grep -i "access-control-allow-origin"; then
+            echo "::error::CORS check FAILED — access-control-allow-origin missing from /ingest preflight"
+            exit 1
+          fi
+          echo "CORS check PASSED"
+
+      - name: 10 MB size-limit check — POST /ingest with 11 MB returns 413
+        if: env.DEPLOYED_BACKEND_URL != ''
+        run: |
+          dd if=/dev/zero bs=1M count=11 2>/dev/null > /tmp/oversized.pdf
+          STATUS=$(curl -s -o /tmp/size_resp.json -w "%{http_code}" \
+            --max-time 60 \
+            -X POST \
+            -F "files=@/tmp/oversized.pdf;type=application/pdf" \
+            "${DEPLOYED_BACKEND_URL}/ingest")
+          echo "HTTP status: $STATUS"
+          cat /tmp/size_resp.json || true
+          if [ "$STATUS" != "413" ]; then
+            echo "::error::Size-limit check FAILED — expected 413, got $STATUS"
+            echo "::error::The deployed backend may be running an old version without the 10 MB limit."
+            exit 1
+          fi
+          echo "Size-limit check PASSED (413 returned as expected)"

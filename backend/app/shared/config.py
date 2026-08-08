@@ -101,6 +101,7 @@ def get_mongo_client():
     return MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
 
 
+@lru_cache(maxsize=1)
 def get_qdrant_client():
     """Returns a Qdrant client configured for cloud URL, local URL, or in-memory."""
     from qdrant_client import QdrantClient

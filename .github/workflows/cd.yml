@@ -46,6 +46,7 @@ jobs:
             frontend:
               - 'frontend/**'
 
+  # ── 1. Deploy backend ─────────────────────────────────────────────────────────
   deploy-backend:
     name: Deploy Backend (AWS Lambda)
     needs: changes
@@ -53,6 +54,10 @@ jobs:
       (github.event_name == 'push' && (needs.changes.outputs.backend == 'true' || github.ref == 'refs/heads/main')) ||
       (github.event_name == 'workflow_dispatch' && (inputs.component == 'all' || inputs.component == 'backend'))
     runs-on: ubuntu-latest
+
+    outputs:
+      # Capture the deployed API URL for the smoke tests
+      api_url: ${{ steps.get_url.outputs.api_url }}
 
     steps:
       - uses: actions/checkout@v4
@@ -95,12 +100,205 @@ jobs:
               MongoDbUri="${{ secrets.MONGODB_URI }}" \
               MongoDbName="cited_or_silent"
 
+      - name: Get deployed API URL
+        id: get_url
+        run: |
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name kre-lite \
+            --region ap-south-1 \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
+            --output text)
+          echo "api_url=${API_URL}" >> "$GITHUB_OUTPUT"
+          echo "Deployed API URL: ${API_URL}"
+
+  # ── 2. Post-deploy smoke tests — gate on backend health ──────────────────────
+  smoke-backend:
+    name: Smoke — Deployed backend health & upload
+    needs: deploy-backend
+    # Always run smoke when backend was deployed; also run on frontend-only to
+    # verify the existing backend is still healthy before deploying frontend.
+    if: always() && needs.deploy-backend.result != 'skipped'
+    runs-on: ubuntu-latest
+
+    env:
+      DEPLOYED_BACKEND_URL: ${{ needs.deploy-backend.outputs.api_url || secrets.DEPLOYED_BACKEND_URL }}
+      DEPLOYED_FRONTEND_URL: ${{ secrets.DEPLOYED_FRONTEND_URL || 'https://kre-lite.vercel.app' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── 2a. Direct curl health check (no browser, fastest gate) ──────────────
+      - name: Health check — GET /health must return 200
+        id: health_check
+        run: |
+          echo "Checking $DEPLOYED_BACKEND_URL/health"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 30 \
+            --retry 5 \
+            --retry-delay 10 \
+            --retry-http-error \
+            "$DEPLOYED_BACKEND_URL/health")
+          echo "HTTP status: $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::Health check failed — /health returned $STATUS"
+            exit 1
+          fi
+          echo "Health check PASSED"
+
+      # ── 2b. CORS check ────────────────────────────────────────────────────────
+      - name: CORS check — OPTIONS /health must return allow-origin header
+        id: cors_check
+        run: |
+          HEADERS=$(curl -s -I \
+            --max-time 15 \
+            -X OPTIONS \
+            -H "Origin: $DEPLOYED_FRONTEND_URL" \
+            -H "Access-Control-Request-Method: POST" \
+            "$DEPLOYED_BACKEND_URL/health")
+          echo "$HEADERS"
+          if ! echo "$HEADERS" | grep -i "access-control-allow-origin"; then
+            echo "::error::CORS check failed — access-control-allow-origin header missing"
+            exit 1
+          fi
+          echo "CORS check PASSED"
+
+      # ── 2c. 10 MB size-limit check (no AWS creds needed) ─────────────────────
+      - name: Size-limit check — POST /ingest with 11MB returns 413
+        id: size_limit_check
+        run: |
+          # Generate an 11 MB file of zeros named as PDF
+          dd if=/dev/zero bs=1M count=11 2>/dev/null > /tmp/oversized.pdf
+          STATUS=$(curl -s -o /tmp/size_resp.json -w "%{http_code}" \
+            --max-time 60 \
+            -X POST \
+            -F "files=@/tmp/oversized.pdf;type=application/pdf" \
+            "$DEPLOYED_BACKEND_URL/ingest")
+          echo "HTTP status: $STATUS"
+          cat /tmp/size_resp.json
+          if [ "$STATUS" != "413" ]; then
+            echo "::error::Size-limit check failed — expected 413, got $STATUS"
+            exit 1
+          fi
+          echo "Size-limit check PASSED (413 received as expected)"
+
+      # ── 2d. Playwright cross-origin suite ─────────────────────────────────────
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install chromium --with-deps
+
+      - name: Run Playwright cross-origin smoke tests
+        working-directory: frontend
+        run: npx playwright test tests/e2e/smoke-deployed.spec.ts --reporter=list
+        env:
+          DEPLOYED_BACKEND_URL: ${{ env.DEPLOYED_BACKEND_URL }}
+          DEPLOYED_FRONTEND_URL: ${{ env.DEPLOYED_FRONTEND_URL }}
+          # Playwright uses the deployed URL as baseURL for smoke tests,
+          # not localhost — so no webServer is needed.
+          CI: "true"
+
+      - name: Upload Playwright smoke report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
+
+  # ── 3. Rollback on smoke failure ──────────────────────────────────────────────
+  rollback-backend:
+    name: Rollback Backend (on smoke failure)
+    needs: [deploy-backend, smoke-backend]
+    # Only run if smoke tests failed AND backend was freshly deployed
+    if: >-
+      always() &&
+      needs.smoke-backend.result == 'failure' &&
+      needs.deploy-backend.result == 'success'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Rollback CloudFormation stack to previous version
+        run: |
+          echo "::warning::Smoke tests FAILED after backend deploy — rolling back kre-lite stack."
+
+          # Check current stack status
+          STACK_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name kre-lite \
+            --region ap-south-1 \
+            --query "Stacks[0].StackStatus" \
+            --output text 2>/dev/null || echo "STACK_NOT_FOUND")
+
+          echo "Current stack status: $STACK_STATUS"
+
+          if [ "$STACK_STATUS" = "UPDATE_COMPLETE" ]; then
+            # Rollback by cancelling or by re-deploying the previous known-good revision.
+            # CloudFormation's native rollback:
+            aws cloudformation rollback-stack \
+              --stack-name kre-lite \
+              --region ap-south-1 || true
+
+            echo "Waiting for rollback to complete..."
+            aws cloudformation wait stack-rollback-complete \
+              --stack-name kre-lite \
+              --region ap-south-1 \
+              --cli-read-timeout 600 || true
+
+            FINAL_STATUS=$(aws cloudformation describe-stacks \
+              --stack-name kre-lite \
+              --region ap-south-1 \
+              --query "Stacks[0].StackStatus" \
+              --output text)
+            echo "Stack status after rollback: $FINAL_STATUS"
+          else
+            echo "Stack not in UPDATE_COMPLETE state ($STACK_STATUS) — skipping rollback."
+          fi
+
+      - name: Annotate PR/commit with rollback notice
+        run: |
+          echo "::error::Backend deploy was ROLLED BACK because smoke tests failed. \
+          Check the 'Smoke — Deployed backend health & upload' job for details."
+          exit 1
+
+  # ── 4. Deploy frontend — only after smoke passes ──────────────────────────────
   deploy-frontend:
     name: Deploy Frontend (Vercel)
-    needs: changes
+    needs: [changes, smoke-backend]
+    # Gate: smoke must have passed (not failed, not skipped due to backend skip)
+    # If smoke was skipped (no backend deploy), only run if frontend changed.
     if: >-
-      (github.event_name == 'push' && (needs.changes.outputs.frontend == 'true' || github.ref == 'refs/heads/main')) ||
-      (github.event_name == 'workflow_dispatch' && (inputs.component == 'all' || inputs.component == 'frontend'))
+      (
+        needs.smoke-backend.result == 'success' &&
+        (
+          (github.event_name == 'push' && (needs.changes.outputs.frontend == 'true' || github.ref == 'refs/heads/main')) ||
+          (github.event_name == 'workflow_dispatch' && (inputs.component == 'all' || inputs.component == 'frontend'))
+        )
+      ) ||
+      (
+        needs.smoke-backend.result == 'skipped' &&
+        (
+          (github.event_name == 'push' && (needs.changes.outputs.frontend == 'true' || github.ref == 'refs/heads/main')) ||
+          (github.event_name == 'workflow_dispatch' && (inputs.component == 'all' || inputs.component == 'frontend'))
+        )
+      )
     runs-on: ubuntu-latest
 
     steps:

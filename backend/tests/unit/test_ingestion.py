@@ -196,3 +196,113 @@ def test_ingest_endpoint_success_with_fixture_pdf():
     assert doc["filename"] == "sample_doc.pdf"
     assert doc["chunks_created"] > 0
     assert doc["pages"] > 0
+
+
+# ── Phase E: Size limit + session append + invalid session_id ─────────────────
+
+def test_upload_over_10mb_returns_413_before_parsing():
+    """
+    POST /ingest with a file > 10 MB must return 413 BEFORE any PDF parsing.
+    Verifies that MAX_FILE_SIZE_BYTES = 10MB constant is honoured and that
+    PyMuPDF is never invoked (we send raw bytes that are not a valid PDF).
+    Renamed from the old 50MB version; limit lowered per SIZE-LIMIT-AND-APPEND-CHANGE.md.
+    """
+    from fastapi.testclient import TestClient
+    from app.api.main import app
+
+    client = TestClient(app)
+    # 11 MB of zeros — NOT a valid PDF, but we must never reach parsing
+    oversized_bytes = b"\x00" * (11 * 1024 * 1024)
+    response = client.post(
+        "/ingest",
+        files=[("files", ("big.pdf", oversized_bytes, "application/pdf"))],
+    )
+    assert response.status_code == 413
+    detail = response.json()["detail"]
+    assert "10 MB" in detail or "limit" in detail.lower()
+
+
+def test_ingest_with_existing_session_id_appends_documents():
+    """
+    POST /ingest with a valid existing session_id must append documents
+    to that session rather than creating a new one.  Verified by ingesting
+    the same fixture PDF twice with the same session_id and confirming
+    the returned session_id is unchanged and both ingest calls succeed.
+
+    Requires live Qdrant — skipped automatically when Qdrant is unreachable.
+    """
+    if not FIXTURE_PDF.exists():
+        pytest.skip("Fixture PDF not found")
+
+    # Skip if Qdrant is not reachable (live-infra gate)
+    try:
+        import socket
+        from app.shared.config import get_settings
+        settings = get_settings()
+        host = settings.qdrant_endpoint or "localhost"
+        # Quick TCP probe — if this fails, Qdrant is not running
+        import urllib.parse
+        parsed = urllib.parse.urlparse(host if "://" in host else f"http://{host}")
+        s = socket.create_connection((parsed.hostname or "localhost", parsed.port or 6333), timeout=2)
+        s.close()
+    except Exception:
+        pytest.skip("Qdrant not reachable — skipping live append test")
+
+    from fastapi.testclient import TestClient
+    from app.api.main import app
+
+    client = TestClient(app)
+
+    # First ingest — no session_id supplied; backend mints one
+    with open(FIXTURE_PDF, "rb") as f:
+        resp1 = client.post(
+            "/ingest",
+            files=[("files", ("sample_doc.pdf", f, "application/pdf"))],
+        )
+    assert resp1.status_code == 200
+    body1 = resp1.json()
+    session_id = body1["session_id"]
+    assert session_id, "Backend must return a session_id on first ingest"
+    assert len(body1["documents"]) == 1
+
+    # Second ingest — same session_id (append mode)
+    with open(FIXTURE_PDF, "rb") as f:
+        resp2 = client.post(
+            "/ingest",
+            files=[("files", ("sample_doc_copy.pdf", f, "application/pdf"))],
+            data={"session_id": session_id},
+        )
+    assert resp2.status_code == 200
+    body2 = resp2.json()
+    # session_id must be the SAME — no new session created
+    assert body2["session_id"] == session_id, (
+        f"Expected session_id={session_id!r}, got {body2['session_id']!r}"
+    )
+    # Backend returns only the newly added doc, not cumulative
+    assert len(body2["documents"]) == 1
+    assert body2["documents"][0]["chunks_created"] > 0
+
+
+def test_ingest_with_blank_session_id_returns_400():
+    """
+    POST /ingest with an explicitly blank session_id (non-null but empty/whitespace)
+    must return 400 with a useful error shape.
+    An *absent* session_id is fine (backend mints one); only a whitespace-only
+    value is rejected because callers must not pass empty strings.
+    """
+    if not FIXTURE_PDF.exists():
+        pytest.skip("Fixture PDF not found")
+
+    from fastapi.testclient import TestClient
+    from app.api.main import app
+
+    client = TestClient(app)
+    with open(FIXTURE_PDF, "rb") as f:
+        response = client.post(
+            "/ingest",
+            files=[("files", ("sample_doc.pdf", f, "application/pdf"))],
+            data={"session_id": "   "},  # whitespace-only — invalid
+        )
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert "session_id" in detail.lower() or "blank" in detail.lower()

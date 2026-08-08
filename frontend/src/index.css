@@ -2,6 +2,31 @@
 @import "tw-animate-css";
 @import "@fontsource-variable/geist";
 
+/* Tailwind v4 dark mode strategy using class */
+@custom-variant dark (&:where(.dark, .dark *));
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius: var(--radius);
+}
+
+
 @layer base {
   :root {
     --background: #f8fafc;
@@ -10,7 +35,7 @@
     --card-foreground: #0f172a;
     --popover: #ffffff;
     --popover-foreground: #0f172a;
-    --primary: #9a4021;
+    --primary: #ad4928;
     --primary-foreground: #ffffff;
     --primary-container: #b95837;
     --secondary: #f1f5f9;
@@ -35,6 +60,35 @@
     overflow: hidden;
   }
 }
+
+/* ── Dark mode overrides ──────────────────────────────────────────────────── */
+.dark {
+  --background: #0f172a;
+  --foreground: #f1f5f9;
+  --card: #1e293b;
+  --card-foreground: #f1f5f9;
+  --popover: #1e293b;
+  --popover-foreground: #f1f5f9;
+  --primary: #f97316;
+  --primary-foreground: #0f172a;
+  --primary-container: #fb923c;
+  --secondary: #1e293b;
+  --secondary-foreground: #94a3b8;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --accent: #431407;
+  --accent-foreground: #fdba74;
+  --destructive: #f87171;
+  --border: #1e293b;
+  --input: #1e293b;
+  --ring: #f97316;
+}
+
+.dark body {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
 
 /* Custom design classes matching clean minimalist theme */
 .bg-surface {

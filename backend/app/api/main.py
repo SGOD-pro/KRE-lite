@@ -20,6 +20,13 @@ from pydantic import BaseModel
 from app.shared.schemas import IngestDocumentResult, IngestResponse, QueryRequest
 from app.query.planner import answer_question
 
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+# 10 MB hard cap — checked before any PDF parsing so malicious oversized uploads
+# never reach PyMuPDF. Chosen to match typical academic paper / policy doc sizes
+# while keeping Lambda memory pressure low.  See SIZE-LIMIT-AND-APPEND-CHANGE.md.
+MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
+
 app = FastAPI(title="Cited-or-Silent API", version="1.0.0")
 
 app.add_middleware(
@@ -70,6 +77,16 @@ async def ingest(
     # Always ensure we have a real session_id so chunks and response are consistent
     if not session_id:
         session_id = f"session_{int(time.time() * 1000)}"
+    else:
+        # Validate that the provided session_id looks structurally valid
+        # (non-empty after strip).  An unknown session_id is fine — it simply
+        # means we start a new session with that explicit ID (caller controls ID).
+        session_id = session_id.strip()
+        if not session_id:
+            raise HTTPException(
+                status_code=400,
+                detail="session_id must not be blank if provided.",
+            )
 
     results: List[IngestDocumentResult] = []
 
@@ -85,6 +102,16 @@ async def ingest(
             )
 
         raw_bytes = await upload.read()
+
+        # API.md: 413 if file exceeds MAX_FILE_SIZE_BYTES — checked BEFORE parsing
+        if len(raw_bytes) > MAX_FILE_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"File '{filename}' is {len(raw_bytes) // (1024*1024)} MB, "
+                    f"which exceeds the 10 MB limit. Please split large documents."
+                ),
+            )
 
         # Write to a temp file for PyMuPDF (needs a file path)
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:

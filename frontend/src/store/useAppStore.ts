@@ -57,6 +57,7 @@ interface AppState {
   uploadFiles: (files: File[]) => Promise<void>;
   analyzeSession: () => Promise<void>;
   sendQuery: (question: string) => Promise<void>;
+  setIngestionPhase: (phase: IngestionPhase) => void;
 }
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000').replace(/\/+$/, '');
@@ -84,6 +85,7 @@ export const useAppStore = create<AppState>()(
         }
       },
       setActivePage: (page) => set({ activePage: page }),
+      setIngestionPhase: (phase) => set({ ingestionPhase: phase }),
 
       resetSession: () => {
         set({
@@ -127,12 +129,12 @@ export const useAppStore = create<AppState>()(
           if (!sid) {
             throw new Error('Backend did not return a session_id. Ingest failed.');
           }
-          set({
+          set((state) => ({
             sessionId: sid,
-            documents: data.documents,
+            documents: [...state.documents, ...data.documents],
             ingestionPhase: 'ready',
             isIngesting: false,
-          });
+          }));
         } catch (error) {
           set({ ingestionPhase: 'idle', isIngesting: false });
           throw error;
