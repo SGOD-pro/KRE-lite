@@ -171,7 +171,7 @@ def _call_bedrock_nova(user_prompt: str) -> dict[str, Any] | None:
                 modelId=model_id,
                 messages=[{"role": "user", "content": [{"text": user_prompt}]}],
                 system=[{"text": SYSTEM_PROMPT}],
-                inferenceConfig={"temperature": 0.15, "maxTokens": 2048},
+                inferenceConfig={"temperature": 0.0, "maxTokens": 2048},
             )
             content = response["output"]["message"]["content"][0]["text"]
             clean = _clean_json_text(content)

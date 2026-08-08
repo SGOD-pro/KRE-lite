@@ -81,23 +81,30 @@ def bm25_search(
     if _bm25_index is None or _indexed_session != session_id:
         _build_index(session_id=session_id)
 
-    if _bm25_index is None or not _indexed_chunks:
-        return []
-
     tokenized_query = _tokenize(query)
     scores = _bm25_index.get_scores(tokenized_query)
 
-    # Pair chunks with scores and sort descending
+    # Pair chunks with scores and sort descending by score with deterministic chunk_id tiebreaker
     scored = sorted(
         zip(_indexed_chunks, scores),
-        key=lambda x: x[1],
+        key=lambda x: (float(x[1]), str(x[0].get("chunk_id", ""))),
         reverse=True,
     )
 
     results = []
-    for chunk, score in scored[:top_k]:
+    seen_texts = set()
+    for chunk, score in scored:
         if score <= 0:
             break  # BM25 scores of 0 mean no term overlap — not useful
+        text = (chunk.get("text") or "").strip()
+        if not text:
+            continue
+        text_key = text[:200]
+        if text_key in seen_texts:
+            continue
+        seen_texts.add(text_key)
         results.append({**chunk, "bm25_score": float(score)})
+        if len(results) >= top_k:
+            break
 
     return results

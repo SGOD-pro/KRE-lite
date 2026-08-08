@@ -37,13 +37,14 @@ def vector_search(
             must=[FieldCondition(key="session_id", match=MatchValue(value=session_id))]
         )
 
+    fetch_limit = max(top_k * 4, 40)
     try:
         # qdrant-client >= 1.9 query_points API
         search_result = qdrant.query_points(
             collection_name=COLLECTION_NAME,
             query=query_vec,
             query_filter=query_filter,
-            limit=top_k,
+            limit=fetch_limit,
             with_payload=True,
         ).points
     except Exception as exc:
@@ -87,4 +88,25 @@ def vector_search(
                 chunk["vector_score"] = score
                 scored_chunks.append(chunk)
 
-    return scored_chunks
+    # Deterministic tiebreaker: sort descending by vector_score, then chunk_id
+    scored_chunks.sort(
+        key=lambda x: (x.get("vector_score", 0.0), str(x.get("chunk_id", ""))),
+        reverse=True,
+    )
+
+    # Deduplicate identical chunks (prevents multi-session duplicate flooding)
+    deduped_results = []
+    seen_texts = set()
+    for chunk in scored_chunks:
+        text = (chunk.get("text") or "").strip()
+        if not text:
+            continue
+        text_key = text[:200]
+        if text_key in seen_texts:
+            continue
+        seen_texts.add(text_key)
+        deduped_results.append(chunk)
+        if len(deduped_results) >= top_k:
+            break
+
+    return deduped_results

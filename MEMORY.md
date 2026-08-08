@@ -316,3 +316,18 @@ contradicting a decision already made.
    - Frontend `useAppStore.ts`: `sendQuery` checks `if (!sessionId)` and blocks query dispatch.
    - Backend `main.py`: `POST /query` validates `session_id` presence and returns HTTP 400 if missing or whitespace.
    - Unit tests: `test_query_missing_session_id_returns_400` passing. All 86 unit tests passing.
+
+### 2026-08-08T02:40Z — Adversarial Stability 3-Run Gate Re-Verification (session 6ed53fcc)
+
+**Gate Verification Protocol:** 3 fresh process invocations of `pytest tests/unit/test_adversarial_refusal.py -v`:
+
+- **Run 1:** **19/19 PASSED** (73.26s) — 0 failures
+- **Run 2:** **19/19 PASSED** (64.43s) — 0 failures
+- **Run 3:** **19/19 PASSED** (62.56s) — 0 failures
+
+**3-State Breakdown across all 3 runs:**
+- **Refused (12/19):** 5 adjacent-but-absent facts, 5 out-of-corpus, 2 non-numeric false-premise leading questions.
+- **Corrected (7/19):** 5 wrong-entity/number swaps, 2 numeric false-premise leading questions.
+- **Answered (0/19):** Zero ungrounded responses.
+
+**Phase C Gate:** **PASSED** (100% deterministic stability across 3 fresh processes). Ready for Phase D.

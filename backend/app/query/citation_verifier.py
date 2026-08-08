@@ -110,7 +110,12 @@ def _quote_matches_chunk(quote: str, chunk_text: str) -> bool:
                 has_fake_entity = False
                 for qw in q_words:
                     if qw not in STOPWORDS and len(qw) > 2:
-                        if not any(fuzz.ratio(qw, tw) >= 80 for tw in window):
+                        if not any(
+                            fuzz.ratio(qw, tw) >= 80
+                            or (len(qw) >= 3 and tw.startswith(qw))
+                            or (len(tw) >= 3 and qw.startswith(tw))
+                            for tw in window
+                        ):
                             has_fake_entity = True
                             break
                 if not has_fake_entity:
@@ -137,7 +142,12 @@ def _quote_matches_chunk(quote: str, chunk_text: str) -> bool:
 
         matched_count = sum(
             1 for w in content_words_in_quote
-            if any(fuzz.ratio(w, tw) >= 80 for tw in t_words)
+            if any(
+                fuzz.ratio(w, tw) >= 80
+                or (len(w) >= 3 and tw.startswith(w))
+                or (len(tw) >= 3 and w.startswith(tw))
+                for tw in t_words
+            )
         )
         # Accept if at least 4 content words match AND at least 75% of content words match
         if matched_count >= 4 and matched_count / len(content_words_in_quote) >= 0.75:
