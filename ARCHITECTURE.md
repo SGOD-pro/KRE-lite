@@ -6,22 +6,33 @@ ONE FastAPI service. ONE process. No microservices, no Lambda
 packaging, no dual dev/prod provider matrix. This is a deliberate
 scope decision — see BOUNDARIES.md for what was cut and why.
 
-```text
-+-------------------------------------------------------------+
-|                  FastAPI app (single process)               |
-|                                                             |
-|  POST /ingest   -> chunker (PyMuPDF, page + heading)        |
-|                    -> embed (Bedrock Titan Embeddings v2)   |
-|                    -> store (Qdrant Cloud + MongoDB Atlas)  |
-|                                                             |
-|  POST /query    -> bm25_retriever (in-process, rank-bm25)  |
-|                  -> vector_retriever (Qdrant Cloud)         |
-|                  -> Reciprocal Rank Fusion (RRF)            |
-|                  -> llm_call (Nova Pro, structured JSON)    |
-|                  -> citation_verifier  <-- guardrail        |
-|                  -> response (answered | corrected |        |
-|                               refused)                      |
-+-------------------------------------------------------------+
+```mermaid
+graph TD
+    subgraph FastAPI ["FastAPI app (single process)"]
+        direction TB
+        
+        subgraph Ingest ["POST /ingest"]
+            direction TB
+            C["Chunker (PyMuPDF, page + heading)"] --> E["Embed (Bedrock Titan Embeddings v2)"]
+            E --> S["Store (Qdrant Cloud + MongoDB Atlas)"]
+        end
+        
+        subgraph Query ["POST /query"]
+            direction TB
+            BM["bm25_retriever (in-process, rank-bm25)"]
+            VR["vector_retriever (Qdrant Cloud)"]
+            F["Reciprocal Rank Fusion (RRF)"]
+            L["llm_call (Nova Pro, structured JSON)"]
+            CV["citation_verifier (guardrail)"]
+            R["response (answered | corrected | refused)"]
+            
+            BM --> F
+            VR --> F
+            F --> L
+            L --> CV
+            CV --> R
+        end
+    end
 ```
 
 ## Module Map
