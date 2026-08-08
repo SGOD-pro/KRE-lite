@@ -144,7 +144,6 @@ export const ChatPane: React.FC = () => {
       <div className="p-4 pl-16 border-b border-border flex items-center justify-between bg-background shrink-0">
         <Button
           onClick={() => setCurrentView('upload')}
-          // className="p-2.5 rounded-full bg-muted text-foreground hover:bg-border transition-colors cursor-pointer"
           size='icon'
           variant={"secondary"}
           title="Add/Manage Documents"

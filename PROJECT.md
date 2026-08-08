@@ -1,4 +1,4 @@
-# PROJECT.md — Cited-or-Silent: A Zero-Fabrication Document QA Agent
+# PROJECT.md — KRE-lite: A Zero-Fabrication Document QA Agent
 
 ## What We Are Building
 

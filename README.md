@@ -1,4 +1,4 @@
-# Cited-or-Silent 🤫
+# KRE-lite 🤫
 
 An enterprise-grade, citation-anchored Document Question-Answering system. Every answer the system returns is traced to a verbatim quote on a specific page and section of an ingested document. If no grounded quote can be found, the system refuses to answer — never hallucinates.
 
@@ -224,7 +224,7 @@ CI (`ci.yml`) runs on every push. CD (`cd.yml`) is manually triggered via `workf
 ## 📋 Non-Negotiables Compliance Checklist
 
 - [x] **Zero fabrication guarantee**: Deterministic citation verifier strips any ungrounded claim before it reaches the user.
-- [x] **Adversarial guardrails**: 18/19 adversarial questions refused correctly (1 known wrong-entity-swap case in progress).
+- [x] **Adversarial guardrails**: 19/19 adversarial questions correctly refused or corrected (3-state machine: refused / corrected / answered — Phase C+D verified 100% stable across 3 independent runs).
 - [x] **Single LLM call**: One structured-JSON call per query (DECISION.md Rule 1).
 - [x] **Two-Pane UI**: Split-view with interactive citation highlight and source scroll (UI-UX.md).
 - [x] **Dockerized**: `docker compose up` brings up backend + frontend.

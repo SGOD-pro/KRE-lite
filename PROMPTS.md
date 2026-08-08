@@ -52,10 +52,11 @@ Build Phase 1 exactly as specified:
   chunk MUST have non-null page_number and section_title
   (DECISION.md Rule 7) — if you can't reliably detect headings in a
   given PDF, fall back to "Untitled section, page N", never null.
-- embed_service.py: BGE-small-en-v1.5 via ONNX, running locally, no
-  external API call for this step.
-- store.py: Chroma (or sqlite-vec if you hit friction with Chroma —
-  log that decision in MEMORY.md if you switch).
+- embed_service.py: AWS Bedrock Titan Text Embeddings v2
+  (amazon.titan-embed-text-v2:0, 1024-dim) via boto3. Exponential
+  backoff for ThrottlingException.
+- store.py: Qdrant Cloud (vectors + payload) + MongoDB Atlas (full
+  chunk text). Dual-write on every ingest call.
 - bm25_retriever.py and vector_retriever.py per the retrieval flow
   in ARCHITECTURE.md.
 - POST /ingest per API.md's contract exactly — including the error

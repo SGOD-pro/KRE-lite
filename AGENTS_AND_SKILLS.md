@@ -2,9 +2,9 @@
 
 ## 1. System Overview
 
-**Cited-or-Silent** is a zero-hallucination Document Question-Answering system designed to enforce total factual ground truth.
+**KRE-lite** is a zero-hallucination Document Question-Answering system designed to enforce total factual ground truth.
 
-Traditional RAG systems silently fabricate answers when documents lack information. Cited-or-Silent implements an invariant-enforcing agentic architecture: **Every factual claim must be backed by a verified verbatim citation quote, or the system strictly refuses to answer.**
+Traditional RAG systems silently fabricate answers when documents lack information. KRE-lite implements an invariant-enforcing agentic architecture: **Every factual claim must be backed by a verified verbatim citation quote, or the system strictly refuses to answer.**
 
 ---
 
@@ -18,10 +18,11 @@ Traditional RAG systems silently fabricate answers when documents lack informati
 ### Decision Logic & Authority
 1. **Quote Existence Check**: Extracts all cited quotes from the structured LLM output and validates their character and token overlap against the exact retrieved chunks in storage.
 2. **Entity & Negation Check**: Detects ungrounded number swaps, date mismatches, and entity hallucination.
-3. **Filtering & Synthesis**:
+3. **Filtering & Synthesis (3-State Machine)**:
    - Strips ungrounded claims and invalid citations.
-   - If at least one verified citation survives with grounded text, returns status `answered` with page and section anchors.
-   - If zero verified citations survive (or ungrounded claims dominate), overrides the LLM and outputs status `refused` (`reason: no_grounded_answer`).
+   - If at least one verified citation survives and no false premise is detected, returns status `answered` with page and section anchors.
+   - If a verified citation numerically contradicts the user's stated premise (`contains_claim=True`), returns status `corrected` with the grounded refutation (DECISION.md Rule 15).
+   - If zero verified citations survive, overrides the LLM and outputs status `refused` (`reason: no_grounded_answer`).
 
 ---
 

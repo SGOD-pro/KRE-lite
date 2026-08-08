@@ -30,10 +30,10 @@ the multi-Lambda packaging problem with it.
 
 ## Not building: dual dev/prod provider routing
 
-One embedding path (BGE-small ONNX, local). One LLM provider (NVIDIA
-Build, with OpenRouter as a documented fallback if rate-limited — not
-a live dual-path, just a config value you can flip). No
-environment-specific model matrix.
+One embedding path (AWS Bedrock Titan Text Embeddings v2, via boto3 API
+call). One LLM provider (AWS Bedrock Nova Pro via Converse API, with
+OpenRouter as a documented fallback if rate-limited — not a live dual-path,
+just a config value you can flip). No environment-specific model matrix.
 
 ## Not building: a second LLM call anywhere
 
