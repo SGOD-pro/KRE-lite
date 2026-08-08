@@ -136,7 +136,7 @@ jobs:
             --max-time 30 \
             --retry 5 \
             --retry-delay 10 \
-            --retry-http-error \
+            --retry-all-errors \
             "$DEPLOYED_BACKEND_URL/health")
           echo "HTTP status: $STATUS"
           if [ "$STATUS" != "200" ]; then
