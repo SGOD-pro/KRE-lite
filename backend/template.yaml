@@ -5,6 +5,9 @@ Description: >
   SAM Template for the Cited-or-Silent FastAPI backend
 
 Globals:
+  Api:
+    BinaryMediaTypes:
+      - "*/*"
   Function:
     Timeout: 300
     MemorySize: 1024
