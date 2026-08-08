@@ -1,1 +1,19 @@
-# Created by venv; see https://docs.python.org/3/library/venv.html
+# Standard Ignores
+node_modules/
+.venv/
+venv/
+env/
+.idea/
+.vscode/
+.DS_Store
+*.log
+test-results/
+playwright-report/
+blob-report/
+
+.aws-sam
+.pytest_cache
+.venv
+
+Lib
+Scripts

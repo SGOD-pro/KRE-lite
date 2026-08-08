@@ -1,2 +1,16 @@
-# Created by venv; see https://docs.python.org/3/library/venv.html
-*
+# Standard Python ignores
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+htmlcov/
+.aws-sam/
+.env
