@@ -68,6 +68,35 @@ Resources:
           Properties:
             Path: /{proxy+}
             Method: ANY
+        ApiEventRoot:
+          Type: Api
+          Properties:
+            Path: /
+            Method: ANY
+
+  # Inject CORS headers on ALL API Gateway error responses (4xx/5xx).
+  # This is critical: when Lambda crashes (502), API Gateway generates the
+  # response itself — FastAPI never runs — so no CORS headers are added.
+  # These GatewayResponse resources ensure the headers are always present.
+  GatewayResponseDefault4XX:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      ResponseType: DEFAULT_4XX
+      RestApiId: !Ref ServerlessRestApi
+      ResponseParameters:
+        gatewayresponse.header.Access-Control-Allow-Origin: "'https://kre-lite.vercel.app'"
+        gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        gatewayresponse.header.Access-Control-Allow-Methods: "'GET,POST,OPTIONS,PUT,PATCH'"
+
+  GatewayResponseDefault5XX:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      ResponseType: DEFAULT_5XX
+      RestApiId: !Ref ServerlessRestApi
+      ResponseParameters:
+        gatewayresponse.header.Access-Control-Allow-Origin: "'https://kre-lite.vercel.app'"
+        gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        gatewayresponse.header.Access-Control-Allow-Methods: "'GET,POST,OPTIONS'"
 
 Outputs:
   ApiUrl:
