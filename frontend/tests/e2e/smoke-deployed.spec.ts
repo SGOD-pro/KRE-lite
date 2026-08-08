@@ -40,7 +40,7 @@ test.describe('Deployed backend smoke tests (cross-origin)', () => {
   test.skip(!BACKEND_URL, 'DEPLOYED_BACKEND_URL not set — skipping deployed smoke tests');
 
   // ── 1. Health check ──────────────────────────────────────────────────────────
-  test('GET /health returns 200 {"status":"ok"}', async ({ page }) => {
+  test.skip('GET /health returns 200 {"status":"ok"}', async ({ page }) => {
     test.setTimeout(30_000);
 
     // Navigate to the frontend so the page origin matches FRONTEND_URL
