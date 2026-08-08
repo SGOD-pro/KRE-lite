@@ -20,6 +20,7 @@ on:
           - all
           - backend
           - frontend
+          - smoketest-only
 
 permissions:
   contents: read
@@ -115,9 +116,13 @@ jobs:
   smoke-backend:
     name: Smoke — Deployed backend health & upload
     needs: deploy-backend
-    # Always run smoke when backend was deployed; also run on frontend-only to
-    # verify the existing backend is still healthy before deploying frontend.
-    if: always() && needs.deploy-backend.result != 'skipped'
+    # Always run smoke when backend was deployed, or when explicitly requested
+    if: >-
+      always() && 
+      (
+        needs.deploy-backend.result == 'success' ||
+        (github.event_name == 'workflow_dispatch' && inputs.component == 'smoketest-only')
+      )
     runs-on: ubuntu-latest
 
     env:

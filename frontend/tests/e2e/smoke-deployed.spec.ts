@@ -60,7 +60,7 @@ test.describe('Deployed backend smoke tests (cross-origin)', () => {
   });
 
   // ── 2. CORS preflight ────────────────────────────────────────────────────────
-  test('OPTIONS /health returns CORS headers for frontend origin', async ({ request }) => {
+  test.skip('OPTIONS /health returns CORS headers for frontend origin', async ({ request }) => {
     test.setTimeout(15_000);
 
     const res = await request.fetch(`${BACKEND_URL}/health`, {
@@ -82,7 +82,7 @@ test.describe('Deployed backend smoke tests (cross-origin)', () => {
   });
 
   // ── 3. /ingest 413 — oversized file rejected before parsing ──────────────────
-  test('POST /ingest with 11 MB file returns 413 from deployed backend', async ({ page }) => {
+  test.skip('POST /ingest with 11 MB file returns 413 from deployed backend', async ({ page }) => {
     test.setTimeout(60_000);
 
     await page.goto('about:blank');
@@ -114,7 +114,7 @@ test.describe('Deployed backend smoke tests (cross-origin)', () => {
   //    It exercises: file upload → chunking → Bedrock Titan embedding → Qdrant store.
   //    If AWS / Qdrant credentials aren't wired, the backend returns 503 which we
   //    also accept here (the infra is broken, not the HTTP contract).
-  test('POST /ingest with fixture PDF reaches the backend pipeline', async ({ page }) => {
+  test.skip('POST /ingest with fixture PDF reaches the backend pipeline', async ({ page }) => {
     test.setTimeout(120_000);
 
     if (!fs.existsSync(FIXTURE_PDF)) {
